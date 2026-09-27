@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>YPHS Health Screening Scheduler</title>
-<!-- BUILD MARKER: v2026-09-11-fixes13 — if you can't find this exact string with
+<!-- BUILD MARKER: v2026-09-11-fixes15 — if you can't find this exact string with
      Ctrl/Cmd+F while viewing the page source, you are opening a stale/old copy
      of this file, not the latest one. -->
 <style>
@@ -268,7 +268,7 @@ body{background:var(--bg);color:var(--text);overflow:hidden;}
       <button class="btn-icon" onclick="toggleTheme()" title="Toggle theme">🌙</button>
       <button class="btn-icon" onclick="exportPDF()" title="Export PDF" id="pdf-btn" style="display:none">🖨</button>
       <div class="lock-badge" id="lock-badge" onclick="showPinModal()">🔒 View only</div>
-      <div title="Build version — confirms you're on the latest file" style="font-size:9px;color:var(--text3);opacity:.5;padding:2px 6px;font-family:'JetBrains Mono',monospace">v2026-09-11-fixes13</div>
+      <div title="Build version — confirms you're on the latest file" style="font-size:9px;color:var(--text3);opacity:.5;padding:2px 6px;font-family:'JetBrains Mono',monospace">v2026-09-11-fixes15</div>
       <button class="btn btn-primary btn-sm" id="add-btn" onclick="showAddSchool()" style="display:none">+ Add School</button>
     </div>
   </div>
@@ -320,7 +320,8 @@ body{background:var(--bg);color:var(--text);overflow:hidden;}
   <h3 id="smod-title">Add School</h3>
   <p>Fill in screening details. School appears on the calendar automatically.</p>
   <div class="field-grid">
-    <div class="field field-full"><label>School Name</label><input id="f-name" type="text" placeholder="e.g. Chua Chu Kang Primary School"></div>
+    <div class="field field-full"><label>School Name</label><input id="f-name" type="text" list="school-names-list" placeholder="e.g. Chua Chu Kang Primary School" autocomplete="off"></div>
+    <datalist id="school-names-list"></datalist>
     <div class="field"><label>Team</label>
       <select id="f-team"><option value="">— select —</option><option>T1P</option><option>T2P</option><option>T3P</option><option>T4P</option><option>T5P</option><option>T6P</option></select>
     </div>
@@ -492,8 +493,8 @@ function isBlockout(d,yr){
   const dt=dateOnly(d);
   return blockouts.filter(b=>b.year===yr).some(b=>dateOnly(b.date).getTime()===dt.getTime());
 }
-function saveHols(){localStorage.setItem('yphs_hols',JSON.stringify(customHols));scheduleSave();}
-function saveBlockouts(){localStorage.setItem('yphs_blockouts',JSON.stringify(blockouts));scheduleSave();}
+function saveHols(){localStorage.setItem('yphs_hols',JSON.stringify(customHols));dirtyTabs.add('customHols');scheduleSave();}
+function saveBlockouts(){localStorage.setItem('yphs_blockouts',JSON.stringify(blockouts));dirtyTabs.add('blockouts');scheduleSave();}
 let isDark=true;
 
 // ── HELPERS ────────────────────────────────────────────────────────────────
@@ -553,6 +554,13 @@ function getTermDays(termIdx,yr){
 // Log columns: A=ts B=msg
 
 let syncPending=false, syncTimer=null;
+// Tracks which tabs actually changed since the last successful write, so a
+// small edit in one area (e.g. a school's status) never rewrites — and
+// overwrites with stale in-memory data — tabs the user hasn't touched in this
+// tab/session (e.g. Schools Info edited directly in the Sheet). This is the
+// fix for edits "disappearing after a while": previously EVERY save rewrote
+// ALL five tabs unconditionally, regardless of which one changed.
+let dirtyTabs=new Set();
 
 async function gFetch(path, opts={}){
   const url=PROXY_BASE
@@ -680,42 +688,57 @@ async function loadFromSheets(){
 }
 
 async function saveAllToSheets(){
+  // Only write tabs that actually changed in THIS browser tab since the last
+  // save — never rewrite a tab nobody touched here. Rewriting an untouched
+  // tab would overwrite it with whatever stale copy happened to be sitting in
+  // memory, clobbering edits made directly in the Sheet (or by someone else)
+  // in the meantime. This is the fix for edits silently disappearing.
+  const toWrite=new Set(dirtyTabs);
+  dirtyTabs.clear();
+  if(toWrite.size===0)return;
   setSyncStatus('syncing');
   syncPending=true;
   try{
-    // Write schools
-    const sRows=[['id','year','name','team','status','start','end','','','contact','phone','email','notes'],
-      ...schools.map(schoolToRow)];
-    // Write info
-    const iRows=[['name','address','postal','contact','phone','email','p1c','p1e','p2c','p2e','p3c','p3e','p4c','p4e','p5c','p5e','p6c','p6e','lat','lng'],
-      ...schoolsInfo.map(infoToRow)];
-    // Write log (last 200)
-    const lRows=[['timestamp','action'],...activityLog.slice(0,200).map(l=>[l.ts,l.msg.replace(/<[^>]+>/g,'')])];
-
-    // Settings tab: blockouts + custom hols
-    const boRows=[['year','date','label','type'],
-      ...blockouts.map(b=>[b.year,b.date,b.label||'',b.type||'blockout'])];
-    const holRows=[['year','name','start','end','type'],
-      ...Object.entries(customHols).flatMap(([yr,hs])=>hs.map(h=>[yr,h.name||'',h.s,h.e,h.type||'school']))];
-    await Promise.all([
-      writeTab(TAB_SCHOOLS, sRows),
-      writeTab(TAB_INFO, iRows),
-      writeTab(TAB_LOG, lRows),
-      writeTab('Blockouts', boRows),
-      writeTab('CustomHols', holRows),
-    ]);
-    // Also mirror to localStorage
-    localStorage.setItem('yphs_schools',JSON.stringify(schools));
-    localStorage.setItem('yphs_info',JSON.stringify(schoolsInfo));
-    localStorage.setItem('yphs_log',JSON.stringify(activityLog));
+    const writes=[];
+    if(toWrite.has('schools')){
+      const sRows=[['id','year','name','team','status','start','end','','','contact','phone','email','notes'],
+        ...schools.map(schoolToRow)];
+      writes.push(writeTab(TAB_SCHOOLS, sRows));
+    }
+    if(toWrite.has('info')){
+      const iRows=[['name','address','postal','contact','phone','email','p1c','p1e','p2c','p2e','p3c','p3e','p4c','p4e','p5c','p5e','p6c','p6e','lat','lng'],
+        ...schoolsInfo.map(infoToRow)];
+      writes.push(writeTab(TAB_INFO, iRows));
+    }
+    if(toWrite.has('log')){
+      const lRows=[['timestamp','action'],...activityLog.slice(0,200).map(l=>[l.ts,l.msg.replace(/<[^>]+>/g,'')])];
+      writes.push(writeTab(TAB_LOG, lRows));
+    }
+    if(toWrite.has('blockouts')){
+      const boRows=[['year','date','label','type'],
+        ...blockouts.map(b=>[b.year,b.date,b.label||'',b.type||'blockout'])];
+      writes.push(writeTab('Blockouts', boRows));
+    }
+    if(toWrite.has('customHols')){
+      const holRows=[['year','name','start','end','type'],
+        ...Object.entries(customHols).flatMap(([yr,hs])=>hs.map(h=>[yr,h.name||'',h.s,h.e,h.type||'school']))];
+      writes.push(writeTab('CustomHols', holRows));
+    }
+    await Promise.all(writes);
+    // Mirror to localStorage — only the parts that were actually written
+    if(toWrite.has('schools'))localStorage.setItem('yphs_schools',JSON.stringify(schools));
+    if(toWrite.has('info'))localStorage.setItem('yphs_info',JSON.stringify(schoolsInfo));
+    if(toWrite.has('log'))localStorage.setItem('yphs_log',JSON.stringify(activityLog));
     setSyncStatus('ok');
   }catch(err){
     console.error('Save error:',err);
     setSyncStatus('error');
-    // Always save to localStorage as fallback
-    localStorage.setItem('yphs_schools',JSON.stringify(schools));
-    localStorage.setItem('yphs_info',JSON.stringify(schoolsInfo));
-    localStorage.setItem('yphs_log',JSON.stringify(activityLog));
+    // Put the failed tabs back so the next save attempt retries them
+    toWrite.forEach(t=>dirtyTabs.add(t));
+    // Always save to localStorage as fallback for whatever was being written
+    if(toWrite.has('schools'))localStorage.setItem('yphs_schools',JSON.stringify(schools));
+    if(toWrite.has('info'))localStorage.setItem('yphs_info',JSON.stringify(schoolsInfo));
+    if(toWrite.has('log'))localStorage.setItem('yphs_log',JSON.stringify(activityLog));
   }finally{
     syncPending=false;
   }
@@ -732,14 +755,17 @@ async function writeTab(tab, rows){
 // Debounced save — batches rapid changes into one write
 function save(){
   localStorage.setItem('yphs_schools',JSON.stringify(schools));
+  dirtyTabs.add('schools');
   scheduleSave();
 }
 function saveInfo(){
   localStorage.setItem('yphs_info',JSON.stringify(schoolsInfo));
+  dirtyTabs.add('info');
   scheduleSave();
 }
 function saveLog(){
   localStorage.setItem('yphs_log',JSON.stringify(activityLog));
+  dirtyTabs.add('log');
   scheduleSave();
 }
 function scheduleSave(){
@@ -1768,6 +1794,12 @@ function renderLog(){
 function clearLog(){if(!confirm('Clear all activity log?'))return;activityLog=[];saveLog();toast('Log cleared');render();}
 
 // ── SCHOOL CRUD ────────────────────────────────────────────────────────────
+function populateSchoolNameSuggestions(){
+  const list=document.getElementById('school-names-list');
+  if(!list)return;
+  const names=[...new Set(schoolsInfo.map(s=>s.name).filter(Boolean))].sort();
+  list.innerHTML=names.map(n=>`<option value="${escapeHtml(n)}">`).join('');
+}
 function showAddSchool(team='',dateStr=''){
   state.editingId=null;
   document.getElementById('smod-title').textContent='Add School';
@@ -1777,6 +1809,7 @@ function showAddSchool(team='',dateStr=''){
   document.getElementById('f-pstart').value=dateStr;
   document.getElementById('f-pend').value=dateStr;
   document.getElementById('f-days').value='';
+  populateSchoolNameSuggestions();
   document.getElementById('school-modal').style.display='flex';
   setTimeout(()=>document.getElementById('f-name').focus(),50);
 }
@@ -1794,6 +1827,7 @@ function editSchool(id){
   document.getElementById('f-phone').value=s.phone||'';
   document.getElementById('f-email').value=s.email||'';
   document.getElementById('f-notes').value=s.notes||'';
+  populateSchoolNameSuggestions();
   document.getElementById('school-modal').style.display='flex';
 }
 function calcDays(){
