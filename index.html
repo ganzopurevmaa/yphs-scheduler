@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>YPHS Health Screening Scheduler</title>
-<!-- BUILD MARKER: v2026-09-11-fixes15 — if you can't find this exact string with
+<!-- BUILD MARKER: v2026-09-11-fixes16 — if you can't find this exact string with
      Ctrl/Cmd+F while viewing the page source, you are opening a stale/old copy
      of this file, not the latest one. -->
 <style>
@@ -14,7 +14,7 @@
   --text:#E8ECF4;--text2:#8B96B8;--text3:#5A6480;
   --accent:#4F8EF7;--accent2:#2D6AD4;
   --t1p:#E8736A;--t2p:#5CB85C;--t3p:#4A9FD4;--t4p:#E8A042;--t5p:#D46FA0;--t6p:#6AB86A;
-  --accepted:#3D9E6A;--pending-c:#C8A020;--pending-a:#C87020;--declined:#C84040;
+  --accepted:#3D9E6A;--pending-c:#C8A020;--pending-a:#C87020;--declined:#C84040;--sped:#8B6FD6;
   --hol:#2A2A3A;--ph:#222230;
   --r:8px;--r2:12px;--shadow:0 2px 16px rgba(0,0,0,.5);
 }
@@ -94,6 +94,7 @@ body{background:var(--bg);color:var(--text);overflow:hidden;}
 .cal-grid-head{display:grid;border-bottom:1px solid var(--border);}
 .hcell{padding:8px 6px;font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;text-align:center;border-right:1px solid var(--border);background:var(--surface2);}
 .hcell:first-child{text-align:left;padding-left:12px;background:var(--surface);min-width:72px;}
+.month-hcell{text-align:left;padding-left:10px;background:var(--surface3,var(--surface2));border-bottom:1px solid var(--border);font-size:10px;letter-spacing:.04em;}
 .cal-row{display:grid;border-bottom:1px solid var(--border);position:relative;}
 .cal-row:last-child{border-bottom:none;}
 .team-label-cell{display:flex;align-items:center;padding:0 10px;border-right:1px solid var(--border);min-width:72px;z-index:1;background:var(--surface);}
@@ -268,7 +269,7 @@ body{background:var(--bg);color:var(--text);overflow:hidden;}
       <button class="btn-icon" onclick="toggleTheme()" title="Toggle theme">🌙</button>
       <button class="btn-icon" onclick="exportPDF()" title="Export PDF" id="pdf-btn" style="display:none">🖨</button>
       <div class="lock-badge" id="lock-badge" onclick="showPinModal()">🔒 View only</div>
-      <div title="Build version — confirms you're on the latest file" style="font-size:9px;color:var(--text3);opacity:.5;padding:2px 6px;font-family:'JetBrains Mono',monospace">v2026-09-11-fixes15</div>
+      <div title="Build version — confirms you're on the latest file" style="font-size:9px;color:var(--text3);opacity:.5;padding:2px 6px;font-family:'JetBrains Mono',monospace">v2026-09-11-fixes16</div>
       <button class="btn btn-primary btn-sm" id="add-btn" onclick="showAddSchool()" style="display:none">+ Add School</button>
     </div>
   </div>
@@ -400,9 +401,9 @@ const TEAMS=[
   {code:'T5P',org:'SHS', color:'#D46FA0'},
   {code:'T6P',org:'SHS', color:'#6AB86A'},
 ];
-const STATUSES=['Pending Confirmation','Pending Annex','Accepted','Declined'];
-// Kept in sync with the --accepted/--pending-c/--pending-a/--declined CSS vars in :root
-const STA_COLORS={'Accepted':'#3D9E6A','Pending Confirmation':'#C8A020','Pending Annex':'#C87020','Declined':'#C84040'};
+const STATUSES=['Pending Confirmation','Pending Annex','Accepted','Declined','SPED School'];
+// Kept in sync with the --accepted/--pending-c/--pending-a/--declined/--sped CSS vars in :root
+const STA_COLORS={'Accepted':'#3D9E6A','Pending Confirmation':'#C8A020','Pending Annex':'#C87020','Declined':'#C84040','SPED School':'#8B6FD6'};
 const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
 const TERMS={
   2026:[
@@ -515,7 +516,7 @@ function netDays(s,e,yr){
   if(!s||!e)return'';
   const year=yr||state.year;
   let count=0,cur=new Date(s),end=new Date(e);
-  while(cur<=end){if(isWeekday(cur)&&!isPH(cur,year))count++;cur.setDate(cur.getDate()+1);}
+  while(cur<=end){if(isWeekday(cur)&&!isPH(cur,year)&&!isHoliday(cur,year)&&!isBlockout(cur,year))count++;cur.setDate(cur.getDate()+1);}
   return count;
 }
 function termLabel(d,yr){
@@ -932,6 +933,22 @@ function renderCalendar(){
   const activeHols=getSchoolHols(yr);
 
   // Date header
+  let monthHead='';
+  if(state.calView==='term'){
+    // Group consecutive days by month so each month gets one spanning label
+    // above the day numbers, e.g. "September 2026" spanning its 20-ish days.
+    const groups=[];
+    days.forEach(day=>{
+      const key=day.getFullYear()+'-'+day.getMonth();
+      const last=groups[groups.length-1];
+      if(last&&last.key===key)last.count++;
+      else groups.push({key,count:1,label:day.toLocaleDateString('en-SG',{month:'long',year:'numeric'})});
+    });
+    monthHead=`<div class="cal-grid-head" style="grid-template-columns:${colW}">
+      <div class="hcell"></div>
+      ${groups.map(g=>`<div class="hcell month-hcell" style="grid-column:span ${g.count}">${g.label}</div>`).join('')}
+    </div>`;
+  }
   let head=`<div class="cal-grid-head" style="grid-template-columns:${colW}"><div class="hcell">Team</div>`;
   days.forEach(day=>{
     const ph=isPH(day,yr),hol=isHoliday(day,yr),today=isToday(day);
@@ -985,9 +1002,13 @@ function renderCalendar(){
       const sc=getStatusColor(s.status);
       const ps=dateOnly(s.plannedStart),pe=dateOnly(s.plannedEnd);
       let colStart=-1,colEnd=-1;
+      // Render continuously across the whole planned range, including any PH or
+      // blocked-out days within it — a school explicitly scheduled over a
+      // block-out should visually sit on top of it, not be cut short by it.
+      // (netDays still correctly excludes those days from the day *count* above.)
       days.forEach((day,di)=>{
         const dt=dateOnly(day);
-        if(dt>=ps&&dt<=pe&&!isHoliday(day,yr)&&!isPH(day,yr)&&!isBlockout(day,yr)){
+        if(dt>=ps&&dt<=pe){
           if(colStart===-1)colStart=di;
           colEnd=di;
         }
@@ -1049,7 +1070,7 @@ function renderCalendar(){
       ${Object.entries(STA_COLORS).map(([s,c])=>`<span style="display:flex;align-items:center;gap:3px;font-size:10px;color:var(--text2)"><span style="width:7px;height:7px;border-radius:50%;background:${c};display:inline-block"></span>${s.split(' ')[0]}</span>`).join('')}
     </div>
   </div>
-  <div class="cal-grid-scroll"><div class="cal-grid" style="${calGridStyle}">${head}${rows}</div></div>`;
+  <div class="cal-grid-scroll"><div class="cal-grid" style="${calGridStyle}">${monthHead}${head}${rows}</div></div>`;
 }
 function setCalView(v){state.calView=v;if(v==='term')state.termIdx=0;render();}
 function setTermIdx(i){
@@ -1385,7 +1406,7 @@ function renderSchools(){
       <td>${fields('email','Email','130px',false)}</td>
       ${[1,2,3,4,5,6].map(p=>`<td style="text-align:center">${fields('p'+p+'c','0','36px')}</td><td style="text-align:center">${fields('p'+p+'e','0','44px')}</td>`).join('')}
       <td style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--accent);text-align:center">${[1,2,3,4,5,6].reduce((a,p)=>a+(parseInt(s['p'+p+'e'])||0),0)||''}</td>
-      <td style="text-align:center">${s.lat&&s.lng?`<span title="Located on map" style="color:#3D9E6A">📍</span>`:ed?`<button class="btn btn-ghost btn-sm" onclick="locateSchool(${i})" title="Find this school on the map">📍</button>`:''}</td>
+      <td style="text-align:center;white-space:nowrap">${s.lat&&s.lng?`<span title="Located on map" style="color:#3D9E6A">📍</span>`:ed?`<button class="btn btn-ghost btn-sm" onclick="locateSchool(${i})" title="Find this school on the map">📍</button>`:''}${ed&&s.name?`<button class="btn btn-ghost btn-sm" onclick="deleteInfoRow(${i})" title="Delete this school" style="color:#C84040">🗑</button>`:''}</td>
     </tr>`;
   }).join('');
   return`<div style="margin-bottom:12px;display:flex;align-items:center;gap:10px">
@@ -1394,11 +1415,19 @@ function renderSchools(){
   </div>
   <div class="data-table" style="overflow-x:auto"><table>
     <thead><tr><th>#</th><th>School Name</th><th>Address</th><th>Postal</th><th>Contact Person</th><th>Phone</th><th>Email</th>
-    ${[1,2,3,4,5,6].map(p=>`<th>P${p} Cls</th><th>P${p} Enr</th>`).join('')}<th>Total Enr</th><th>Map</th></tr></thead>
+    ${[1,2,3,4,5,6].map(p=>`<th>P${p} Cls</th><th>P${p} Enr</th>`).join('')}<th>Total Enr</th><th>Actions</th></tr></thead>
     <tbody>${rows}</tbody>
   </table></div>`;
 }
 function addInfoRow(){schoolsInfo.push({});saveInfo();render();}
+function deleteInfoRow(i){
+  const s=schoolsInfo[i];
+  if(!s||!confirm(`Delete "${s.name}" from Schools Info? This does not affect any calendar entries already scheduled for this school.`))return;
+  schoolsInfo.splice(i,1);
+  saveInfo();
+  toast(`${s.name} removed from Schools Info`);
+  render();
+}
 async function updateInfo(i,k,v){
   if(!schoolsInfo[i])schoolsInfo[i]={};
   schoolsInfo[i][k]=v;
