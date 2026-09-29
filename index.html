@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>YPHS Health Screening Scheduler</title>
-<!-- BUILD MARKER: v2026-09-11-fixes16 — if you can't find this exact string with
+<!-- BUILD MARKER: v2026-09-11-fixes19 — if you can't find this exact string with
      Ctrl/Cmd+F while viewing the page source, you are opening a stale/old copy
      of this file, not the latest one. -->
 <style>
@@ -269,7 +269,7 @@ body{background:var(--bg);color:var(--text);overflow:hidden;}
       <button class="btn-icon" onclick="toggleTheme()" title="Toggle theme">🌙</button>
       <button class="btn-icon" onclick="exportPDF()" title="Export PDF" id="pdf-btn" style="display:none">🖨</button>
       <div class="lock-badge" id="lock-badge" onclick="showPinModal()">🔒 View only</div>
-      <div title="Build version — confirms you're on the latest file" style="font-size:9px;color:var(--text3);opacity:.5;padding:2px 6px;font-family:'JetBrains Mono',monospace">v2026-09-11-fixes16</div>
+      <div title="Build version — confirms you're on the latest file" style="font-size:9px;color:var(--text3);opacity:.5;padding:2px 6px;font-family:'JetBrains Mono',monospace">v2026-09-11-fixes19</div>
       <button class="btn btn-primary btn-sm" id="add-btn" onclick="showAddSchool()" style="display:none">+ Add School</button>
     </div>
   </div>
@@ -324,10 +324,11 @@ body{background:var(--bg);color:var(--text);overflow:hidden;}
     <div class="field field-full"><label>School Name</label><input id="f-name" type="text" list="school-names-list" placeholder="e.g. Chua Chu Kang Primary School" autocomplete="off"></div>
     <datalist id="school-names-list"></datalist>
     <div class="field"><label>Team</label>
-      <select id="f-team"><option value="">— select —</option><option>T1P</option><option>T2P</option><option>T3P</option><option>T4P</option><option>T5P</option><option>T6P</option></select>
+      <select id="f-team"><option value="">— select —</option><optgroup label="T1P"><option value="T1P|HMG">T1P HMG</option><option value="T1P|SCP">T1P SCP</option><option value="T1P|BOTH">T1P BOTH</option></optgroup><optgroup label="T2P"><option value="T2P|HMG">T2P HMG</option><option value="T2P|SCP">T2P SCP</option><option value="T2P|BOTH">T2P BOTH</option></optgroup><optgroup label="T3P"><option value="T3P|HMG">T3P HMG</option><option value="T3P|SCP">T3P SCP</option><option value="T3P|BOTH">T3P BOTH</option></optgroup><optgroup label="T4P"><option value="T4P|HMG">T4P HMG</option><option value="T4P|SCP">T4P SCP</option><option value="T4P|BOTH">T4P BOTH</option></optgroup><optgroup label="T5P"><option value="T5P|HMG">T5P HMG</option><option value="T5P|SCP">T5P SCP</option><option value="T5P|BOTH">T5P BOTH</option></optgroup><optgroup label="T6P"><option value="T6P|HMG">T6P HMG</option><option value="T6P|SCP">T6P SCP</option><option value="T6P|BOTH">T6P BOTH</option></optgroup></select>
+      <div style="font-size:10px;color:var(--text3);margin-top:3px">BOTH = one shared date range. Need different HMG and SCP dates? Add the school twice — once as HMG, once as SCP.</div>
     </div>
     <div class="field"><label>Status</label>
-      <select id="f-status"><option>Pending Confirmation</option><option>Pending Annex</option><option>Accepted</option><option>Declined</option></select>
+      <select id="f-status"><option>Pending Confirmation</option><option>Pending Annex</option><option>Accepted</option><option>Declined</option><option>SPED School</option></select>
     </div>
     <div class="field"><label>Start Date</label><input id="f-pstart" type="date" onchange="calcDays()"></div>
     <div class="field"><label>End Date</label><input id="f-pend" type="date" onchange="calcDays()"></div>
@@ -351,6 +352,7 @@ body{background:var(--bg);color:var(--text);overflow:hidden;}
   <div class="ctx-item" onclick="ctxStatus('Pending Confirmation')"><span>⏳</span> Pending Confirmation</div>
   <div class="ctx-item" onclick="ctxStatus('Pending Annex')"><span>📎</span> Pending Annex</div>
   <div class="ctx-item" onclick="ctxStatus('Declined')"><span>❌</span> Mark Declined</div>
+  <div class="ctx-item" onclick="ctxStatus('SPED School')"><span>🟣</span> SPED School</div>
   <div class="ctx-sep"></div>
   <div class="ctx-item" onclick="ctxEdit()"><span>✏️</span> Edit Details</div>
   <div class="ctx-item" onclick="ctxDelete()" style="color:#E85050"><span>🗑</span> Delete</div>
@@ -366,6 +368,31 @@ let SITE_PASSWORD = localStorage.getItem('yphs_site_pw') || 'YPHS2026';
 let EDITOR_PIN    = localStorage.getItem('yphs_editor_pin') || '2027';
 // Keep PIN alias for backward compatibility with existing checkPin() calls
 const SHEET_ID='11MDEThuNiyEiZaKh6Yqt-CdwXG5K0V1IfBI4T9Mhli8';
+const BUILD_VERSION='v2026-09-11-fixes19';
+// If a newer version of this page has been deployed, this tab is running old code
+// against possibly-newer data. Saving from it could overwrite other people's work
+// (or drop columns added by the update), so it is blocked until the page is refreshed.
+let staleVersion=false,lastVersionCheck=0;
+async function checkForNewVersion(force){
+  if(!force&&Date.now()-lastVersionCheck<30000)return staleVersion;
+  lastVersionCheck=Date.now();
+  try{
+    const base=location.href.split('#')[0].split('?')[0];
+    const res=await fetch(base+'?vcheck='+Date.now(),{cache:'no-store'});
+    if(!res.ok)return staleVersion;
+    const m=(await res.text()).match(new RegExp("BUILD_VERSION\\s*=\\s*'(v[\\w.-]+)'"));
+    if(m&&m[1]!==BUILD_VERSION){staleVersion=true;showStaleBanner();}
+  }catch(e){/* offline, or opened straight from a file — skip silently */}
+  return staleVersion;
+}
+function showStaleBanner(){
+  if(document.getElementById('stale-banner'))return;
+  const b=document.createElement('div');
+  b.id='stale-banner';
+  b.style.cssText='position:fixed;top:0;left:0;right:0;z-index:1000;background:#C87020;color:#fff;padding:10px 16px;font-size:13px;display:flex;align-items:center;gap:12px;justify-content:center';
+  b.innerHTML='<span>⚠ A newer version of this app is available. Please refresh before making changes so nothing gets overwritten.</span><button class="btn btn-primary btn-sm" onclick="location.reload()">Refresh now</button>';
+  document.body.appendChild(b);
+}
 // ── SECURITY NOTE ────────────────────────────────────────────────────────────
 // This file is served to the browser as plain text, so ANYTHING written here
 // (API keys, passwords) is visible to anyone who views the page source — the
@@ -401,6 +428,14 @@ const TEAMS=[
   {code:'T5P',org:'SHS', color:'#D46FA0'},
   {code:'T6P',org:'SHS', color:'#6AB86A'},
 ];
+// HMG / SCP sub-teams within each team. BOTH = one shared date range for both.
+// Existing schedule entries (saved before sub-teams existed) count as BOTH.
+const SUB_TEAMS=['HMG','SCP','BOTH'];
+const SUB_COLORS={HMG:'#7DD3FC',SCP:'#F9A8D4',BOTH:'#FFFFFF'}; // school-name colours on the calendar
+function getSub(s){return SUB_TEAMS.includes(s&&s.sub)?s.sub:'BOTH';}
+function teamLabel(s){return s&&s.team?`${s.team} ${getSub(s)}`:'—';}
+// Two entries only clash if they need the same sub-team at the same time.
+function subsClash(a,b){const x=getSub(a),y=getSub(b);return x==='BOTH'||y==='BOTH'||x===y;}
 const STATUSES=['Pending Confirmation','Pending Annex','Accepted','Declined','SPED School'];
 // Kept in sync with the --accepted/--pending-c/--pending-a/--declined/--sped CSS vars in :root
 const STA_COLORS={'Accepted':'#3D9E6A','Pending Confirmation':'#C8A020','Pending Annex':'#C87020','Declined':'#C84040','SPED School':'#8B6FD6'};
@@ -526,7 +561,7 @@ function termLabel(d,yr){
   return'';
 }
 function hasOverlap(school){
-  return schools.some(s=>s.id!==school.id&&s.year===school.year&&s.team===school.team&&s.plannedStart&&s.plannedEnd&&school.plannedStart&&school.plannedEnd&&dateOnly(s.plannedStart)<=dateOnly(school.plannedEnd)&&dateOnly(s.plannedEnd)>=dateOnly(school.plannedStart));
+  return schools.some(s=>s.id!==school.id&&s.year===school.year&&s.team===school.team&&subsClash(s,school)&&s.plannedStart&&s.plannedEnd&&school.plannedStart&&school.plannedEnd&&dateOnly(s.plannedStart)<=dateOnly(school.plannedEnd)&&dateOnly(s.plannedEnd)>=dateOnly(school.plannedStart));
 }
 function weekdays(y,m){
   const days=[],d=new Date(y,m,1);
@@ -606,12 +641,12 @@ async function gClear(range){
 }
 
 // Sheet columns: A=id B=year C=name D=team E=status F=start G=end
-//   H=(legacy actualStart, unused) I=(legacy actualEnd, unused) J=contact K=phone L=email M=notes
+//   H=(legacy actualStart, unused) I=(legacy actualEnd, unused) J=contact K=phone L=email M=notes N=sub (HMG/SCP/BOTH)
 // Planned vs. Screening dates were merged into a single Start/End Date pair.
 function schoolToRow(s){
   return[s.id||'',s.year||'',s.name||'',s.team||'',s.status||'',
          s.plannedStart||'',s.plannedEnd||'','','',
-         s.contact||'',s.phone||'',s.email||'',s.notes||''];
+         s.contact||'',s.phone||'',s.email||'',s.notes||'',getSub(s)];
 }
 function rowToSchool(r){
   if(!r[0]&&!r[2])return null;
@@ -622,7 +657,8 @@ function rowToSchool(r){
   return{id:r[0]||Date.now().toString(),year:parseInt(r[1])||2026,name:r[2]||'',
          team:r[3]||'',status:r[4]||'Pending Confirmation',
          plannedStart:r[7]||r[5]||null,plannedEnd:r[8]||r[6]||null,
-         contact:r[9]||'',phone:r[10]||'',email:r[11]||'',notes:r[12]||''};
+         contact:r[9]||'',phone:r[10]||'',email:r[11]||'',notes:r[12]||'',
+         sub:SUB_TEAMS.includes(r[13])?r[13]:'BOTH'};
 }
 function infoToRow(s){
   return[s.name||'',s.address||'',s.postal||'',s.contact||'',s.phone||'',s.email||'',
@@ -642,7 +678,7 @@ async function loadFromSheets(){
   try{
     // Load all 3 tabs in parallel
     const [sRes,iRes,lRes,boRes,holRes]=await Promise.all([
-      gFetch(`/values/${TAB_SCHOOLS}!A2:M`),
+      gFetch(`/values/${TAB_SCHOOLS}!A2:N`),
       gFetch(`/values/${TAB_INFO}!A2:T`),
       gFetch(`/values/${TAB_LOG}!A2:B`),
       gFetch(`/values/Blockouts!A2:D`).catch(()=>({values:[]})),
@@ -689,6 +725,10 @@ async function loadFromSheets(){
 }
 
 async function saveAllToSheets(){
+  if(await checkForNewVersion()){
+    toast('⚠ Not saved — a newer version of the app is available. Refresh the page first.','#C84040');
+    return;
+  }
   // Only write tabs that actually changed in THIS browser tab since the last
   // save — never rewrite a tab nobody touched here. Rewriting an untouched
   // tab would overwrite it with whatever stale copy happened to be sitting in
@@ -702,7 +742,7 @@ async function saveAllToSheets(){
   try{
     const writes=[];
     if(toWrite.has('schools')){
-      const sRows=[['id','year','name','team','status','start','end','','','contact','phone','email','notes'],
+      const sRows=[['id','year','name','team','status','start','end','','','contact','phone','email','notes','sub'],
         ...schools.map(schoolToRow)];
       writes.push(writeTab(TAB_SCHOOLS, sRows));
     }
@@ -771,7 +811,7 @@ function saveLog(){
 }
 function scheduleSave(){
   if(syncTimer)clearTimeout(syncTimer);
-  syncTimer=setTimeout(()=>saveAllToSheets(),800);
+  syncTimer=setTimeout(()=>{syncTimer=null;saveAllToSheets();},800);
 }
 function addLog(msg){
   activityLog.unshift({ts:new Date().toISOString(),msg});
@@ -1031,8 +1071,8 @@ function renderCalendar(){
         onmouseleave="hideTooltip()"
         ondragstart="onSpanDragStart(event,'${s.id}','${sc}')"
         ondragend="onSpanDragEnd(event,'${s.id}')">
-        <div class="sname">${escapeHtml(s.name)}</div>
-        <div class="sdates">${d2s(s.plannedStart)} – ${d2s(s.plannedEnd)} · ${netDays(s.plannedStart,s.plannedEnd,yr)} days</div>
+        <div class="sname"><span style="color:${SUB_COLORS[getSub(s)]};background:rgba(0,0,0,.38);padding:0 5px;border-radius:4px">${escapeHtml(s.name)}</span></div>
+        <div class="sdates">${d2s(s.plannedStart)} – ${d2s(s.plannedEnd)} · ${netDays(s.plannedStart,s.plannedEnd,yr)} days · ${getSub(s)}</div>
         ${ov?`<div class="conflict-badge" title="Overlap detected">!</div>`:''}
       </div>`;
     });
@@ -1095,6 +1135,7 @@ function showTooltip(e,schoolId){
     <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">
       <span style="background:${sc}33;color:${sc};padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600">${escapeHtml(s.status)}</span>
     </div>
+    <div style="font-size:11px;color:var(--text2)">👥 ${escapeHtml(teamLabel(s))}</div>
     <div style="font-size:11px;color:var(--text2)">📅 ${escapeHtml(dates)}</div>
     <div style="font-size:11px;color:var(--text2)">🏫 ${escapeHtml(days)}</div>
     ${s.notes?`<div style="font-size:11px;color:var(--text3);margin-top:4px;border-top:1px solid var(--border);padding-top:4px">💬 ${escapeHtml(s.notes)}</div>`:''}`;
@@ -1159,7 +1200,7 @@ function renderDetails(){
   const editable=state.isEditor;
   const thSort=(col,label)=>`<th onclick="sortBy('${col}')" title="Sort by ${label}">${label} ${state.sortCol===col?(state.sortDir===1?'↑':'↓'):''}</th>`;
   let rows='';
-  if(!data.length)rows=`<tr><td colspan="12" style="text-align:center;padding:36px;color:var(--text3)">No schools found. ${editable?'Add schools using "+ Add School".':''}</td></tr>`;
+  if(!data.length)rows=`<tr><td colspan="11" style="text-align:center;padding:36px;color:var(--text3)">No schools found. ${editable?'Add schools using "+ Add School".':''}</td></tr>`;
   else data.forEach((s,i)=>{
     const sc=getStatusColor(s.status),tc=getTeamColor(s.team);
     const ov=hasOverlap(s);
@@ -1168,8 +1209,7 @@ function renderDetails(){
     rows+=`<tr>
       <td style="color:var(--text3);font-family:'JetBrains Mono',monospace;font-size:11px">${i+1}</td>
       <td><div style="font-weight:600">${escapeHtml(s.name)}</div>${tl}</td>
-      <td><span class="team-chip" style="background:${tc}22;color:${tc}">${s.team||'—'}</span></td>
-      <td style="color:var(--text3);font-size:11px">${s.team?TEAMS.find(t=>t.code===s.team)?.org:'—'}</td>
+      <td><span class="team-chip" style="background:${tc}22;color:${tc}">${teamLabel(s)}</span></td>
       <td>${d2s(s.plannedStart)}</td><td>${d2s(s.plannedEnd)}</td>
       <td style="font-family:'JetBrains Mono',monospace;text-align:center">${pd}</td>
       <td><span class="status-chip" style="background:${sc}22;color:${sc}">${s.status||'—'}</span></td>
@@ -1187,7 +1227,7 @@ function renderDetails(){
     <button class="btn btn-ghost btn-sm" onclick="exportCSV()">⬇ CSV</button>
   </div>
   <div class="data-table" style="overflow-x:auto"><table>
-    <thead><tr><th>#</th>${thSort('name','School')}${thSort('team','Team')}<th>Org</th>${thSort('plannedStart','Start Date')}${thSort('plannedEnd','End Date')}<th>Days</th>${thSort('status','Status')}<th>Contact</th><th>Phone</th><th>⚠</th><th></th></tr></thead>
+    <thead><tr><th>#</th>${thSort('name','School')}${thSort('team','Team')}${thSort('plannedStart','Start Date')}${thSort('plannedEnd','End Date')}<th>Days</th>${thSort('status','Status')}<th>Contact</th><th>Phone</th><th>⚠</th><th></th></tr></thead>
     <tbody>${rows}</tbody>
   </table></div>`;
 }
@@ -1279,7 +1319,7 @@ function renderNotifications(){
       html+=`<div class="notif-item">
         <span class="notif-days">${daysLeft===0?'TODAY':daysLeft+'d'}</span>
         <div style="flex:1"><div style="font-weight:600">${escapeHtml(s.name)}</div>
-        <div style="font-size:11px;color:var(--text2)">${d2s(s.plannedStart)} – ${d2s(s.plannedEnd)} · <span style="color:${tc}">${escapeHtml(s.team)}</span></div></div>
+        <div style="font-size:11px;color:var(--text2)">${d2s(s.plannedStart)} – ${d2s(s.plannedEnd)} · <span style="color:${tc}">${escapeHtml(teamLabel(s))}</span></div></div>
         <span class="status-chip" style="background:${getStatusColor(s.status)}22;color:${getStatusColor(s.status)}">${s.status}</span>
         ${state.isEditor?`<button class="btn btn-ghost btn-sm" onclick="editSchool('${s.id}')">Edit</button>`:''}
       </div>`;
@@ -1292,7 +1332,7 @@ function renderNotifications(){
       html+=`<div class="notif-item">
         <span class="notif-days" style="background:#C87020">OVR</span>
         <div style="flex:1"><div style="font-weight:600">${escapeHtml(s.name)}</div>
-        <div style="font-size:11px;color:var(--text2)">${d2s(s.plannedStart)} – ${d2s(s.plannedEnd)} · <span style="color:${getTeamColor(s.team)}">${escapeHtml(s.team)}</span> — overlaps with another school</div></div>
+        <div style="font-size:11px;color:var(--text2)">${d2s(s.plannedStart)} – ${d2s(s.plannedEnd)} · <span style="color:${getTeamColor(s.team)}">${escapeHtml(teamLabel(s))}</span> — overlaps with another school</div></div>
         ${state.isEditor?`<button class="btn btn-ghost btn-sm" onclick="editSchool('${s.id}')">Fix</button>`:''}
       </div>`;
     });
@@ -1371,7 +1411,7 @@ function generateWAMessage(){
   TEAMS.forEach(t=>{
     const ts=byTeam[t.code];if(!ts.length)return;
     msg+=`*${t.code} (${t.org}):*\n`;
-    ts.forEach(s=>{msg+=`• ${escapeHtml(s.name)}\n  📅 ${d2s(s.plannedStart)} – ${d2s(s.plannedEnd)} (${netDays(s.plannedStart,s.plannedEnd,yr)||'?'} days)\n  Status: ${escapeHtml(s.status)}\n`;
+    ts.forEach(s=>{msg+=`• ${escapeHtml(s.name)}${getSub(s)==='BOTH'?'':' ['+getSub(s)+']'}\n  📅 ${d2s(s.plannedStart)} – ${d2s(s.plannedEnd)} (${netDays(s.plannedStart,s.plannedEnd,yr)||'?'} days)\n  Status: ${escapeHtml(s.status)}\n`;
       if(s.contact)msg+=`  👤 ${escapeHtml(s.contact)}`;if(s.phone)msg+=` · 📞 ${escapeHtml(s.phone)}`;if(s.contact||s.phone)msg+='\n';});
     msg+='\n';
   });
@@ -1379,7 +1419,7 @@ function generateWAMessage(){
     msg+=`*Summary:* ${active.length} school${active.length!==1?'s':''} across ${Object.values(byTeam).filter(t=>t.length).length} team${Object.values(byTeam).filter(t=>t.length).length!==1?'s':''}\n\n`;
   }
   const alerts=getPendingAlerts().filter(s=>s.year===yr);
-  if(alerts.length){msg+=`⚠️ *Pending — starting soon:*\n`;alerts.forEach(s=>{msg+=`• ${escapeHtml(s.name)} (${escapeHtml(s.team)}) — ${d2s(s.plannedStart)}\n`;});}
+  if(alerts.length){msg+=`⚠️ *Pending — starting soon:*\n`;alerts.forEach(s=>{msg+=`• ${escapeHtml(s.name)} (${escapeHtml(teamLabel(s))}) — ${d2s(s.plannedStart)}\n`;});}
   msg+=`\n_Generated by YPHS Scheduler · ${new Date().toLocaleDateString('en-SG')}_`;
   return msg;
 }
@@ -1498,40 +1538,77 @@ async function locateSchool(i,silent){
 
 // ── MAP VIEW ─────────────────────────────────────────────────────────────────
 let mapInstance=null,mapMarkers=[];
+let mapMarkersByName={};
+function isSchoolConfirmed(name){
+  return schools.some(s=>s.name===name&&s.year===state.year&&s.status==='Accepted');
+}
 function renderMap(){
   const withCoords=schoolsInfo.filter(s=>s.name);
-  return`<div style="display:flex;flex-direction:column;height:100%;gap:10px">
-    <div style="display:flex;align-items:center;gap:10px">
-      <span style="font-size:12px;color:var(--text2)">${withCoords.filter(s=>s.lat&&s.lng).length} of ${withCoords.length} schools located</span>
-      <button class="btn btn-ghost btn-sm" onclick="geocodeAllSchools()" style="margin-left:auto">📍 Locate All</button>
+  return`<div style="display:flex;gap:12px;height:100%">
+    <div style="width:260px;flex-shrink:0;display:flex;flex-direction:column;gap:8px">
+      <input id="map-search" type="text" placeholder="🔍 Search schools…" oninput="filterMapSchools(this.value)" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:8px 10px;color:var(--text);font-size:12px;outline:none">
+      <div style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text2)">
+        <span style="display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:50%;background:#3D9E6A;display:inline-block"></span>Confirmed</span>
+        <span style="display:flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:50%;background:#4F8EF7;display:inline-block"></span>Not yet</span>
+      </div>
+      <div style="font-size:11px;color:var(--text3)">${withCoords.filter(s=>s.lat&&s.lng).length} of ${withCoords.length} located</div>
+      <button class="btn btn-ghost btn-sm" onclick="geocodeAllSchools()">📍 Locate All</button>
+      <div id="map-school-list" style="flex:1;overflow-y:auto;border-top:1px solid var(--border);padding-top:6px"></div>
     </div>
     <div class="map-wrap" style="flex:1;min-height:400px"><div id="leaflet-map" style="height:100%;width:100%"></div></div>
   </div>`;
+}
+function renderMapSchoolList(filter){
+  const q=(filter||'').trim().toLowerCase();
+  const list=document.getElementById('map-school-list');
+  if(!list)return;
+  const matches=schoolsInfo.filter(s=>s.name&&(!q||s.name.toLowerCase().includes(q)));
+  if(!matches.length){list.innerHTML=`<div style="font-size:11px;color:var(--text3);padding:8px 4px">No matching schools</div>`;return;}
+  list.innerHTML=matches.map(s=>{
+    const confirmed=isSchoolConfirmed(s.name);
+    const located=s.lat&&s.lng;
+    return`<div onclick="flyToSchool('${s.name.replace(/'/g,"\\'")}')" style="padding:7px 6px;border-radius:6px;cursor:${located?'pointer':'default'};opacity:${located?1:.5};display:flex;align-items:center;gap:7px;font-size:12px" onmouseenter="this.style.background='rgba(255,255,255,.05)'" onmouseleave="this.style.background='transparent'">
+      <span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:${confirmed?'#3D9E6A':'#4F8EF7'}"></span>
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(s.name)}</span>
+      ${!located?'<span style="margin-left:auto;font-size:9px;color:var(--text3)">not located</span>':''}
+    </div>`;
+  }).join('');
+}
+function filterMapSchools(v){renderMapSchoolList(v);}
+function flyToSchool(name){
+  const s=schoolsInfo.find(x=>x.name===name);
+  if(!s||!s.lat||!s.lng||!mapInstance)return;
+  mapInstance.flyTo([s.lat,s.lng],16,{duration:0.6});
+  const marker=mapMarkersByName[name];
+  if(marker)setTimeout(()=>marker.openPopup(),650);
 }
 
 function initMap(){
   const container=document.getElementById('leaflet-map');
   if(!container||typeof L==='undefined')return;
-  if(mapInstance){mapInstance.remove();mapInstance=null;mapMarkers=[];}
+  if(mapInstance){mapInstance.remove();mapInstance=null;mapMarkers=[];mapMarkersByName={};}
   mapInstance=L.map('leaflet-map',{scrollWheelZoom:true}).setView([1.3521,103.8198],11); // Singapore
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
     attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     maxZoom:19
   }).addTo(mapInstance);
   plotSchoolMarkers();
+  renderMapSchoolList('');
 }
 
 function plotSchoolMarkers(){
   if(!mapInstance)return;
   mapMarkers.forEach(m=>mapInstance.removeLayer(m));
-  mapMarkers=[];
+  mapMarkers=[];mapMarkersByName={};
   const located=schoolsInfo.filter(s=>s.name&&s.lat&&s.lng);
   located.forEach(s=>{
+    const confirmed=isSchoolConfirmed(s.name);
     const marker=L.circleMarker([s.lat,s.lng],{
-      radius:8,fillColor:'#4F8EF7',color:'#fff',weight:2,fillOpacity:0.9
+      radius:8,fillColor:confirmed?'#3D9E6A':'#4F8EF7',color:'#fff',weight:2,fillOpacity:0.9
     }).addTo(mapInstance);
-    marker.bindPopup(`<strong>${escapeHtml(s.name)}</strong><br>${escapeHtml(s.address||s.postal||'')}${s.contact?`<br>👤 ${escapeHtml(s.contact)}`:''}`);
+    marker.bindPopup(`<strong>${escapeHtml(s.name)}</strong>${confirmed?' ✅':''}<br>${escapeHtml(s.address||s.postal||'')}${s.contact?`<br>👤 ${escapeHtml(s.contact)}`:''}`);
     mapMarkers.push(marker);
+    mapMarkersByName[s.name]=marker;
   });
   if(located.length){
     const bounds=L.latLngBounds(located.map(s=>[s.lat,s.lng]));
@@ -1564,7 +1641,7 @@ function renderArchive(){
     return`<tr>
       <td style="color:var(--text3);font-size:11px">${i+1}</td>
       <td style="font-weight:600">${escapeHtml(s.name)}</td>
-      <td><span class="team-chip" style="background:${tc}22;color:${tc}">${escapeHtml(s.team)}</span></td>
+      <td><span class="team-chip" style="background:${tc}22;color:${tc}">${escapeHtml(teamLabel(s))}</span></td>
       <td>${d2s(s.plannedStart)}</td><td>${d2s(s.plannedEnd)}</td>
       <td style="font-family:'JetBrains Mono',monospace;text-align:center">${pd}</td>
       <td style="color:var(--text3);font-size:11px">${escapeHtml(s.notes||'')}</td>
@@ -1833,7 +1910,7 @@ function showAddSchool(team='',dateStr=''){
   state.editingId=null;
   document.getElementById('smod-title').textContent='Add School';
   ['f-name','f-contact','f-phone','f-email','f-notes'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('f-team').value=team;
+  document.getElementById('f-team').value=team?team+'|BOTH':'';
   document.getElementById('f-status').value='Pending Confirmation';
   document.getElementById('f-pstart').value=dateStr;
   document.getElementById('f-pend').value=dateStr;
@@ -1847,7 +1924,7 @@ function editSchool(id){
   state.editingId=id;
   document.getElementById('smod-title').textContent='Edit School';
   document.getElementById('f-name').value=s.name||'';
-  document.getElementById('f-team').value=s.team||'';
+  document.getElementById('f-team').value=s.team?s.team+'|'+getSub(s):'';
   document.getElementById('f-status').value=s.status||'Pending Confirmation';
   document.getElementById('f-pstart').value=s.plannedStart?ymd(new Date(s.plannedStart)):'';
   document.getElementById('f-pend').value=s.plannedEnd?ymd(new Date(s.plannedEnd)):'';
@@ -1869,10 +1946,11 @@ function saveSchool(){
   const pstart=document.getElementById('f-pstart').value;
   const pend=document.getElementById('f-pend').value;
   if(pstart&&pend&&new Date(pend)<new Date(pstart)){toast('End date must be after start date');return;}
+  const [teamCode,subVal]=(document.getElementById('f-team').value||'').split('|');
   const school={
     id:state.editingId||Date.now().toString(),
     year:state.year,name,
-    team:document.getElementById('f-team').value,
+    team:teamCode||'',sub:teamCode?(subVal||'BOTH'):'BOTH',
     status:document.getElementById('f-status').value,
     plannedStart:pstart||null,plannedEnd:pend||null,
     contact:document.getElementById('f-contact').value,
@@ -1884,13 +1962,14 @@ function saveSchool(){
     const old=schools.find(s=>s.id===state.editingId);
     const changes=[];
     if(old.status!==school.status)changes.push(`status: ${old.status}→${school.status}`);
+    if(old.team!==school.team||getSub(old)!==getSub(school))changes.push(`team: ${teamLabel(old)}→${teamLabel(school)}`);
     if(old.plannedStart!==school.plannedStart)changes.push(`start: ${d2s(old.plannedStart)}→${d2s(school.plannedStart)}`);
     addLog(`Edited <strong>${escapeHtml(school.name)}</strong>${changes.length?' ('+escapeHtml(changes.join(', '))+'）':''}`);
     const idx=schools.findIndex(s=>s.id===state.editingId);
     if(idx>=0)schools[idx]=school;
   } else {
     schools.push(school);
-    addLog(`Added <strong>${escapeHtml(school.name)}</strong> to ${escapeHtml(school.team)} — ${d2s(school.plannedStart)}`);
+    addLog(`Added <strong>${escapeHtml(school.name)}</strong> to ${escapeHtml(teamLabel(school))} — ${d2s(school.plannedStart)}`);
   }
   save();closeSchoolModal();
   toast(state.editingId?'School updated ✓':'School added ✓','#3D9E6A');
@@ -1902,9 +1981,9 @@ function closeSchoolModal(){document.getElementById('school-modal').style.displa
 function exportCSV(){
   const yr=state.year;
   const data=schools.filter(s=>s.year===yr&&s.name);
-  const hdr=['School Name','Team','Organisation','Status','Start Date','End Date','Days','Contact','Phone','Email','Notes'];
+  const hdr=['School Name','Team','Sub-team','Organisation','Status','Start Date','End Date','Days','Contact','Phone','Email','Notes'];
   const rows=data.map(s=>[
-    s.name,s.team,s.team?TEAMS.find(t=>t.code===s.team)?.org:'',s.status,
+    s.name,s.team,getSub(s),s.team?TEAMS.find(t=>t.code===s.team)?.org:'',s.status,
     s.plannedStart?d2s(s.plannedStart):'',s.plannedEnd?d2s(s.plannedEnd):'',
     netDays(s.plannedStart,s.plannedEnd,yr)||'',
     s.contact||'',s.phone||'',s.email||'',s.notes||''
@@ -1922,23 +2001,42 @@ function exportPDF(){
   else if(state.calView==='term'){const ti=state.termIdx||0;days=getTermDays(ti,yr);title=(TERMS[yr][ti]?.name||'Term')+' '+yr;}
   else{days=weekdays(yr,m);title=`${MONTHS[m]} ${yr}`;}
   const LABEL_W=60,COL_W=80;
-  let tbl=`<table border="1" cellpadding="4" style="border-collapse:collapse;font-size:10px;width:100%"><tr><th style="width:${LABEL_W}px;background:#1E3A5F;color:#fff">Team</th>`;
-  days.forEach(d=>{const ph=isPH(d,yr),hol=isHoliday(d,yr);tbl+=`<th style="width:${COL_W}px;background:${hol||ph?'#ddd':'#D6E4F0'};text-align:center;font-size:9px">${['Su','Mo','Tu','We','Th','Fr','Sa'][d.getDay()]}<br><b>${d.getDate()}</b>${ph?' PH':''}</th>`;});
-  tbl+='</tr>';
-  TEAMS.forEach(team=>{
-    tbl+=`<tr><td style="font-weight:700;font-size:9px;background:${getTeamColor(team.code)}33">${team.code}</td>`;
-    days.forEach(day=>{
-      const hol=isHoliday(day,yr),ph=isPH(day,yr);
-      const ss=schools.filter(s=>{if(s.year!==yr||s.team!==team.code||!s.plannedStart||!s.plannedEnd)return false;const dt=dateOnly(day);return dt>=dateOnly(s.plannedStart)&&dt<=dateOnly(s.plannedEnd);});
-      const bg=hol||ph?'#eee':'#fff';
-      tbl+=`<td style="background:${bg};vertical-align:top;font-size:8px;min-height:40px">`;
-      ss.forEach(s=>{tbl+=`<div style="background:${getStatusColor(s.status)}22;border-left:2px solid ${getStatusColor(s.status)};padding:1px 3px;margin-bottom:1px;font-size:8px">${escapeHtml(s.name)}</div>`;});
-      tbl+='</td>';
-    });
+  // A term is ~50 days wide — a single page can't fit that many 80px columns
+  // without shrinking them to illegibility, and printing was previously just
+  // silently clipping everything past the first page's width. Instead, split
+  // into multiple pages of DAYS_PER_PAGE days each, so the whole term prints,
+  // just across several pages, each still legible.
+  const DAYS_PER_PAGE=state.calView==='term'?12:days.length;
+  const chunks=[];
+  for(let i=0;i<days.length;i+=DAYS_PER_PAGE)chunks.push(days.slice(i,i+DAYS_PER_PAGE));
+  const pageHtml=(chunk,pageNum,totalPages)=>{
+    let tbl=`<table border="1" cellpadding="4" style="border-collapse:collapse;font-size:10px;width:100%"><tr><th style="width:${LABEL_W}px;background:#1E3A5F;color:#fff">Team</th>`;
+    chunk.forEach(d=>{const ph=isPH(d,yr),hol=isHoliday(d,yr);tbl+=`<th style="width:${COL_W}px;background:${hol||ph?'#ddd':'#D6E4F0'};text-align:center;font-size:9px">${['Su','Mo','Tu','We','Th','Fr','Sa'][d.getDay()]}<br><b>${d.getDate()}</b>${ph?' PH':''}</th>`;});
     tbl+='</tr>';
-  });
-  tbl+='</table>';
-  win.document.write(`<html><head><title>YPHS ${title}</title><style>body{font-family:Arial,sans-serif;padding:10px;}h2{font-size:14px;margin-bottom:8px;}</style></head><body><h2>YPHS Health Screening — ${title}</h2>${tbl}<p style="font-size:9px;color:#999;margin-top:8px">Generated ${new Date().toLocaleDateString('en-SG')}</p></body></html>`);
+    TEAMS.forEach(team=>{
+      tbl+=`<tr><td style="font-weight:700;font-size:9px;background:${getTeamColor(team.code)}33">${team.code}</td>`;
+      chunk.forEach(day=>{
+        const hol=isHoliday(day,yr),ph=isPH(day,yr);
+        const ss=schools.filter(s=>{if(s.year!==yr||s.team!==team.code||!s.plannedStart||!s.plannedEnd)return false;const dt=dateOnly(day);return dt>=dateOnly(s.plannedStart)&&dt<=dateOnly(s.plannedEnd);});
+        const bg=hol||ph?'#eee':'#fff';
+        tbl+=`<td style="background:${bg};vertical-align:top;font-size:8px;min-height:40px">`;
+        ss.forEach(s=>{tbl+=`<div style="background:${getStatusColor(s.status)}22;border-left:2px solid ${getStatusColor(s.status)};padding:1px 3px;margin-bottom:1px;font-size:8px">${escapeHtml(s.name)}${getSub(s)!=='BOTH'?' ('+getSub(s)+')':''}</div>`;});
+        tbl+='</td>';
+      });
+      tbl+='</tr>';
+    });
+    tbl+='</table>';
+    const pageLabel=totalPages>1?` — ${d2s(chunk[0])} to ${d2s(chunk[chunk.length-1])} (page ${pageNum} of ${totalPages})`:'';
+    return `<div class="print-page"><h2>YPHS Health Screening — ${title}${pageLabel}</h2>${tbl}</div>`;
+  };
+  const body=chunks.map((c,i)=>pageHtml(c,i+1,chunks.length)).join('');
+  win.document.write(`<html><head><title>YPHS ${title}</title><style>
+    @page{size:landscape;margin:10mm}
+    body{font-family:Arial,sans-serif;padding:10px;}
+    h2{font-size:14px;margin-bottom:8px;}
+    .print-page{page-break-after:always;}
+    .print-page:last-child{page-break-after:auto;}
+  </style></head><body>${body}<p style="font-size:9px;color:#999;margin-top:8px">Generated ${new Date().toLocaleDateString('en-SG')}</p></body></html>`);
   win.document.close();setTimeout(()=>win.print(),500);
 }
 
@@ -2133,6 +2231,8 @@ setInterval(()=>{
     loadFromSheets();
   }
 },60000);
+setInterval(()=>checkForNewVersion(),120000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkForNewVersion();});
 } // end bootApp()
 
 // ── CHECK SESSION ON LOAD ──────────────────────────────────────────────────
