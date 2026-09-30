@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>YPHS Health Screening Scheduler</title>
-<!-- BUILD MARKER: v2026-09-11-fixes20 — if you can't find this exact string with
+<!-- BUILD MARKER: v2026-09-11-fixes21 — if you can't find this exact string with
      Ctrl/Cmd+F while viewing the page source, you are opening a stale/old copy
      of this file, not the latest one. -->
 <style>
@@ -269,7 +269,7 @@ body{background:var(--bg);color:var(--text);overflow:hidden;}
       <button class="btn-icon" onclick="toggleTheme()" title="Toggle theme">🌙</button>
       <button class="btn-icon" onclick="exportPDF()" title="Export PDF" id="pdf-btn" style="display:none">🖨</button>
       <div class="lock-badge" id="lock-badge" onclick="showPinModal()">🔒 View only</div>
-      <div title="Build version — confirms you're on the latest file" style="font-size:9px;color:var(--text3);opacity:.5;padding:2px 6px;font-family:'JetBrains Mono',monospace">v2026-09-11-fixes20</div>
+      <div title="Build version — confirms you're on the latest file" style="font-size:9px;color:var(--text3);opacity:.5;padding:2px 6px;font-family:'JetBrains Mono',monospace">v2026-09-11-fixes21</div>
       <button class="btn btn-primary btn-sm" id="add-btn" onclick="showAddSchool()" style="display:none">+ Add School</button>
     </div>
   </div>
@@ -369,7 +369,7 @@ let SITE_PASSWORD = localStorage.getItem('yphs_site_pw') || 'YPHS2026';
 let EDITOR_PIN    = localStorage.getItem('yphs_editor_pin') || '2027';
 // Keep PIN alias for backward compatibility with existing checkPin() calls
 const SHEET_ID='11MDEThuNiyEiZaKh6Yqt-CdwXG5K0V1IfBI4T9Mhli8';
-const BUILD_VERSION='v2026-09-11-fixes20';
+const BUILD_VERSION='v2026-09-11-fixes21';
 // If a newer version of this page has been deployed, this tab is running old code
 // against possibly-newer data. Saving from it could overwrite other people's work
 // (or drop columns added by the update), so it is blocked until the page is refreshed.
@@ -1072,8 +1072,8 @@ function renderCalendar(){
         id="span-${s.id}"
         draggable="true"
         style="left:calc(${leftPct}% + ${GAP}px);width:calc(${widthPct}% - ${GAP*2}px);top:${topPx}px;height:44px;background:${sc};box-shadow:0 2px 8px ${sc}44;"
-        onclick="event.stopPropagation();editSchool('${s.id}')"
-        oncontextmenu="event.preventDefault();showCtxMenu(event,'${s.id}')"
+        onclick="event.stopPropagation();if(state.isEditor)editSchool('${s.id}')"
+        oncontextmenu="event.preventDefault();if(state.isEditor)showCtxMenu(event,'${s.id}')"
         onmouseenter="showTooltip(event,'${s.id}')"
         onmouseleave="hideTooltip()"
         ondragstart="onSpanDragStart(event,'${s.id}','${sc}')"
@@ -1172,6 +1172,7 @@ function showCtxMenu(e,id){
 }
 function hideCtxMenu(){document.getElementById('ctx-menu').style.display='none';state.ctxId=null;}
 function ctxStatus(status){
+  if(!state.isEditor){toast('View only — unlock editor mode to make changes','#C87020');hideCtxMenu();return;}
   if(!state.ctxId)return;
   const s=schools.find(x=>x.id===state.ctxId);
   if(!s)return;
@@ -1179,8 +1180,9 @@ function ctxStatus(status){
   addLog(`Changed <strong>${escapeHtml(s.name)}</strong> status: ${escapeHtml(old)} → ${escapeHtml(status)}`);
   toast(`Status → ${status}`);hideCtxMenu();render();
 }
-function ctxEdit(){if(state.ctxId)editSchool(state.ctxId);hideCtxMenu();}
+function ctxEdit(){if(state.ctxId&&state.isEditor)editSchool(state.ctxId);hideCtxMenu();}
 function ctxDelete(){
+  if(!state.isEditor){toast('View only — unlock editor mode to make changes','#C87020');hideCtxMenu();return;}
   if(!state.ctxId)return;
   const s=schools.find(x=>x.id===state.ctxId);
   if(!s||!confirm(`Delete "${s.name}"?`))return;
@@ -1189,6 +1191,7 @@ function ctxDelete(){
   toast('School deleted');hideCtxMenu();render();
 }
 function deleteCurrentSchool(){
+  if(!state.isEditor){toast('View only — unlock editor mode to make changes','#C87020');return;}
   if(!state.editingId)return;
   const s=schools.find(x=>x.id===state.editingId);
   if(!s||!confirm(`Delete "${s.name}"? This cannot be undone.`))return;
@@ -1480,8 +1483,9 @@ function renderSchools(){
     <tbody>${rows}</tbody>
   </table></div>`;
 }
-function addInfoRow(){schoolsInfo.push({});saveInfo();render();}
+function addInfoRow(){if(!state.isEditor)return;schoolsInfo.push({});saveInfo();render();}
 function deleteInfoRow(i){
+  if(!state.isEditor)return;
   const s=schoolsInfo[i];
   if(!s||!confirm(`Delete "${s.name}" from Schools Info? This does not affect any calendar entries already scheduled for this school.`))return;
   schoolsInfo.splice(i,1);
@@ -1490,6 +1494,7 @@ function deleteInfoRow(i){
   render();
 }
 async function updateInfo(i,k,v){
+  if(!state.isEditor)return;
   if(!schoolsInfo[i])schoolsInfo[i]={};
   schoolsInfo[i][k]=v;
   if(k==='address'||k==='postal'){
@@ -1859,11 +1864,13 @@ function getHolName(date,yr){
 
 // Custom holiday CRUD
 function addCustomHol(yr){
+  if(!state.isEditor)return;
   if(!customHols[yr])customHols[yr]=[];
   customHols[yr].push({id:Date.now().toString(),name:'',s:'',e:'',type:'school'});
   saveHols();render();
 }
 function updateCustomHol(yr,idx,key,val){
+  if(!state.isEditor)return;
   if(!customHols[yr]||!customHols[yr][idx])return;
   customHols[yr][idx][key]=val;
   saveHols();
@@ -1871,6 +1878,7 @@ function updateCustomHol(yr,idx,key,val){
   if(state.view==='calendar')render();
 }
 function deleteCustomHol(yr,idx){
+  if(!state.isEditor)return;
   if(!customHols[yr])return;
   if(!confirm('Remove this holiday period?'))return;
   const name=customHols[yr][idx]?.name||'Holiday';
@@ -1882,16 +1890,19 @@ function deleteCustomHol(yr,idx){
 
 // Block-out date CRUD
 function addBlockout(yr){
+  if(!state.isEditor)return;
   blockouts.push({year:yr,date:'',label:'',type:'blockout'});
   saveBlockouts();render();
 }
 function updateBlockout(idx,key,val){
+  if(!state.isEditor)return;
   if(!blockouts[idx])return;
   blockouts[idx][key]=val;
   saveBlockouts();
   if(state.view==='calendar')render();
 }
 function deleteBlockout(idx){
+  if(!state.isEditor)return;
   if(!confirm('Remove this block-out date?'))return;
   const label=blockouts[idx]?.label||blockouts[idx]?.date||'date';
   blockouts.splice(idx,1);
@@ -1964,6 +1975,7 @@ function calcDays(){
   if(s&&e)document.getElementById('f-days').value=netDays(s,e,state.year);
 }
 function saveSchool(){
+  if(!state.isEditor){toast('View only — unlock editor mode to make changes','#C87020');return;}
   const name=document.getElementById('f-name').value.trim();
   if(!name){toast('Please enter a school name');return;}
   const pstart=document.getElementById('f-pstart').value;
@@ -2126,6 +2138,7 @@ function onRowDragLeave(e,teamCode){
 }
 
 function onRowDrop(e,targetTeam){
+  if(!state.isEditor)return;
   e.preventDefault();
   const id=e.dataTransfer.getData('text/plain')||dragId;
   if(!id)return;
