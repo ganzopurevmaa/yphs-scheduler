@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>YPHS Health Screening Scheduler</title>
-<!-- BUILD MARKER: v2026-09-11-fixes19 — if you can't find this exact string with
+<!-- BUILD MARKER: v2026-09-11-fixes20 — if you can't find this exact string with
      Ctrl/Cmd+F while viewing the page source, you are opening a stale/old copy
      of this file, not the latest one. -->
 <style>
@@ -269,7 +269,7 @@ body{background:var(--bg);color:var(--text);overflow:hidden;}
       <button class="btn-icon" onclick="toggleTheme()" title="Toggle theme">🌙</button>
       <button class="btn-icon" onclick="exportPDF()" title="Export PDF" id="pdf-btn" style="display:none">🖨</button>
       <div class="lock-badge" id="lock-badge" onclick="showPinModal()">🔒 View only</div>
-      <div title="Build version — confirms you're on the latest file" style="font-size:9px;color:var(--text3);opacity:.5;padding:2px 6px;font-family:'JetBrains Mono',monospace">v2026-09-11-fixes19</div>
+      <div title="Build version — confirms you're on the latest file" style="font-size:9px;color:var(--text3);opacity:.5;padding:2px 6px;font-family:'JetBrains Mono',monospace">v2026-09-11-fixes20</div>
       <button class="btn btn-primary btn-sm" id="add-btn" onclick="showAddSchool()" style="display:none">+ Add School</button>
     </div>
   </div>
@@ -340,6 +340,7 @@ body{background:var(--bg);color:var(--text);overflow:hidden;}
     <div class="field field-full"><label>Notes / Remarks</label><textarea id="f-notes" placeholder="e.g. Awaiting VP confirmation, special access…"></textarea></div>
   </div>
   <div class="modal-btns">
+    <button class="btn btn-ghost" id="delete-school-btn" onclick="deleteCurrentSchool()" style="color:#E85050;margin-right:auto;display:none">🗑 Delete</button>
     <button class="btn btn-ghost" onclick="closeSchoolModal()">Cancel</button>
     <button class="btn btn-primary" onclick="saveSchool()" id="save-school-btn">Save School</button>
   </div>
@@ -368,7 +369,7 @@ let SITE_PASSWORD = localStorage.getItem('yphs_site_pw') || 'YPHS2026';
 let EDITOR_PIN    = localStorage.getItem('yphs_editor_pin') || '2027';
 // Keep PIN alias for backward compatibility with existing checkPin() calls
 const SHEET_ID='11MDEThuNiyEiZaKh6Yqt-CdwXG5K0V1IfBI4T9Mhli8';
-const BUILD_VERSION='v2026-09-11-fixes19';
+const BUILD_VERSION='v2026-09-11-fixes20';
 // If a newer version of this page has been deployed, this tab is running old code
 // against possibly-newer data. Saving from it could overwrite other people's work
 // (or drop columns added by the update), so it is blocked until the page is refreshed.
@@ -960,6 +961,10 @@ function renderCalendar(){
     headerLabel=TERMS[yr][ti]?.name+' '+yr+' ('+d2s(TERMS[yr][ti]?.s)+' – '+d2s(TERMS[yr][ti]?.e)+')';
   }
   const nd=days.length;
+  // "school days" shown in the header should exclude PH/holidays/blockouts —
+  // nd itself must stay the raw weekday count, since every weekday (including
+  // holidays) still needs its own grey column in the grid below.
+  const effectiveSchoolDays=days.filter(d=>!isPH(d,yr)&&!isHoliday(d,yr)&&!isBlockout(d,yr)).length;
   const term=getTerm(new Date(yr,m,15),yr);
   const tl=term?`<span class="term-badge ${term.cls}">${term.name}</span>`:'<span class="term-badge term-hol">Holiday</span>';
   const LABEL_W=72;
@@ -1011,9 +1016,11 @@ function renderCalendar(){
       const ps=dateOnly(s.plannedStart),pe=dateOnly(s.plannedEnd);
       return days.some(d=>{const dt=dateOnly(d);return dt>=ps&&dt<=pe;});
     });
-    // Slot assignment
+    // Slot assignment — chronological order for correct overlap packing, with
+    // HMG placed ahead of SCP/BOTH on exact date ties so it lands in the top slot.
     const slots=[],slotOf={};
-    [...teamSchools].sort((a,b)=>new Date(a.plannedStart)-new Date(b.plannedStart)).forEach(s=>{
+    const subPriority={HMG:0,BOTH:1,SCP:2};
+    [...teamSchools].sort((a,b)=>(new Date(a.plannedStart)-new Date(b.plannedStart))||(subPriority[getSub(a)]-subPriority[getSub(b)])).forEach(s=>{
       const ps=dateOnly(s.plannedStart);
       let slot=0;
       while(slots[slot]&&dateOnly(slots[slot].plannedEnd)>=ps)slot++;
@@ -1095,7 +1102,7 @@ function renderCalendar(){
   return`<div class="cal-header">
     <button class="cal-nav" onclick="${prevFn}">‹</button>
     <div><div class="month-label">${headerLabel}</div>
-    <div style="display:flex;gap:6px;align-items:center;margin-top:3px">${state.calView==='month'?tl:''}<span style="font-size:10px;color:var(--text3)">${nd} school days</span></div></div>
+    <div style="display:flex;gap:6px;align-items:center;margin-top:3px">${state.calView==='month'?tl:''}<span style="font-size:10px;color:var(--text3)">${effectiveSchoolDays} school days</span></div></div>
     <button class="cal-nav" onclick="${nextFn}">›</button>
     <div style="flex:1"></div>
     <div class="view-tabs">
@@ -1181,6 +1188,15 @@ function ctxDelete(){
   addLog(`Deleted <strong>${escapeHtml(s.name)}</strong>`);
   toast('School deleted');hideCtxMenu();render();
 }
+function deleteCurrentSchool(){
+  if(!state.editingId)return;
+  const s=schools.find(x=>x.id===state.editingId);
+  if(!s||!confirm(`Delete "${s.name}"? This cannot be undone.`))return;
+  schools=schools.filter(x=>x.id!==state.editingId);save();
+  addLog(`Deleted <strong>${escapeHtml(s.name)}</strong>`);
+  toast('School deleted');
+  closeSchoolModal();render();
+}
 document.addEventListener('click',()=>{hideCtxMenu();});
 
 // ── DETAILS ────────────────────────────────────────────────────────────────
@@ -1239,6 +1255,10 @@ function renderDashboard(){
   const total=ys.length,accepted=ys.filter(s=>s.status==='Accepted').length;
   const byStatus={};STATUSES.forEach(s=>byStatus[s]=ys.filter(x=>x.status===s).length);
   const totalDays=ys.reduce((a,s)=>a+(netDays(s.plannedStart,s.plannedEnd,yr)||0),0);
+  // A school with separate HMG and SCP entries (different dates) is still one
+  // school — dedupe by name so it isn't double-counted here.
+  const hmgOrBothNames=new Set(ys.filter(s=>getSub(s)==='HMG'||getSub(s)==='BOTH').map(s=>s.name));
+  const hmgOrBothCount=hmgOrBothNames.size;
   const teamStats=TEAMS.map(t=>{const ts=ys.filter(s=>s.team===t.code);return{...t,schools:ts.length,days:ts.reduce((a,s)=>a+(netDays(s.plannedStart,s.plannedEnd,yr)||0),0)};});
   const maxDays=Math.max(...teamStats.map(t=>t.days),1);
   const monthCounts=MONTHS.map((mn,mi)=>ys.filter(s=>s.plannedStart&&new Date(s.plannedStart).getMonth()===mi).length);
@@ -1260,6 +1280,7 @@ function renderDashboard(){
     <div class="stat-card"><div class="stat-label">Accepted</div><div class="stat-val" style="color:#5EC98A">${accepted}</div><div class="stat-sub">${total?Math.round(accepted/total*100):0}% of total</div></div>
     <div class="stat-card"><div class="stat-label">Pending</div><div class="stat-val" style="color:#E8C842">${(byStatus['Pending Confirmation']||0)+(byStatus['Pending Annex']||0)}</div><div class="stat-sub">Awaiting confirmation</div></div>
     <div class="stat-card"><div class="stat-label">Total Screening Days</div><div class="stat-val">${totalDays}</div><div class="stat-sub">All teams combined</div></div>
+    <div class="stat-card"><div class="stat-label">HMG / BOTH Schools</div><div class="stat-val" style="color:#7DD3FC">${hmgOrBothCount}</div><div class="stat-sub">Unique schools — SCP-only excluded, HMG+SCP counted once</div></div>
   </div>
   <div class="chart-row">
     <div class="chart-card">
@@ -1909,6 +1930,7 @@ function populateSchoolNameSuggestions(){
 function showAddSchool(team='',dateStr=''){
   state.editingId=null;
   document.getElementById('smod-title').textContent='Add School';
+  document.getElementById('delete-school-btn').style.display='none';
   ['f-name','f-contact','f-phone','f-email','f-notes'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('f-team').value=team?team+'|BOTH':'';
   document.getElementById('f-status').value='Pending Confirmation';
@@ -1923,6 +1945,7 @@ function editSchool(id){
   const s=schools.find(x=>x.id===id);if(!s)return;
   state.editingId=id;
   document.getElementById('smod-title').textContent='Edit School';
+  document.getElementById('delete-school-btn').style.display='';
   document.getElementById('f-name').value=s.name||'';
   document.getElementById('f-team').value=s.team?s.team+'|'+getSub(s):'';
   document.getElementById('f-status').value=s.status||'Pending Confirmation';
