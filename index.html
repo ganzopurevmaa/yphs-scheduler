@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>YPHS Health Screening Scheduler</title>
-<!-- BUILD MARKER: v2026-09-11-fixes22 — if you can't find this exact string with
+<!-- BUILD MARKER: v2026-09-11-fixes23 — if you can't find this exact string with
      Ctrl/Cmd+F while viewing the page source, you are opening a stale/old copy
      of this file, not the latest one. -->
 <style>
@@ -221,6 +221,7 @@ body{background:var(--bg);color:var(--text);overflow:hidden;}
 </style>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 <div id="app" style="display:none">
@@ -269,7 +270,7 @@ body{background:var(--bg);color:var(--text);overflow:hidden;}
       <button class="btn-icon" onclick="toggleTheme()" title="Toggle theme">🌙</button>
       <button class="btn-icon" onclick="exportPDF()" title="Export PDF" id="pdf-btn" style="display:none">🖨</button>
       <div class="lock-badge" id="lock-badge" onclick="showPinModal()">🔒 View only</div>
-      <div title="Build version — confirms you're on the latest file" style="font-size:9px;color:var(--text3);opacity:.5;padding:2px 6px;font-family:'JetBrains Mono',monospace">v2026-09-11-fixes22</div>
+      <div title="Build version — confirms you're on the latest file" style="font-size:9px;color:var(--text3);opacity:.5;padding:2px 6px;font-family:'JetBrains Mono',monospace">v2026-09-11-fixes23</div>
       <button class="btn btn-primary btn-sm" id="add-btn" onclick="showAddSchool()" style="display:none">+ Add School</button>
     </div>
   </div>
@@ -369,7 +370,7 @@ let SITE_PASSWORD = localStorage.getItem('yphs_site_pw') || 'YPHS2026';
 let EDITOR_PIN    = localStorage.getItem('yphs_editor_pin') || '2027';
 // Keep PIN alias for backward compatibility with existing checkPin() calls
 const SHEET_ID='11MDEThuNiyEiZaKh6Yqt-CdwXG5K0V1IfBI4T9Mhli8';
-const BUILD_VERSION='v2026-09-11-fixes22';
+const BUILD_VERSION='v2026-09-11-fixes23';
 // If a newer version of this page has been deployed, this tab is running old code
 // against possibly-newer data. Saving from it could overwrite other people's work
 // (or drop columns added by the update), so it is blocked until the page is refreshed.
@@ -415,6 +416,23 @@ function showStaleBanner(){
 //
 // Leave PROXY_BASE as '' to keep today's direct-to-Sheets behavior unchanged.
 const PROXY_BASE='https://yhpsscheduler.ganzo-purevmaa.workers.dev';
+// ── ANNEX PDF UPLOAD — Google OAuth (per-person sign-in), not the service account ──
+// Service accounts on a personal (non-Workspace) Google account have no Drive
+// storage of their own, so they can't own uploaded files — Google's own error
+// for this is "Service Accounts do not have storage quota." The fix: whoever
+// uploads signs in with their OWN Google account in a short popup, and the
+// file is created in THEIR Drive storage, inside the shared folder below.
+// Neither value here is a secret — both are safe to see in this public file.
+//   GOOGLE_OAUTH_CLIENT_ID: from Google Cloud Console → APIs & Services →
+//     Credentials → Create Credentials → OAuth client ID → Application type
+//     "Web application" → Authorized JavaScript origins: your exact site URL
+//     (e.g. https://yourusername.github.io). Copy the Client ID it generates.
+//   ANNEX_DRIVE_FOLDER_ID: create a folder in your own Google Drive, share it
+//     with any teammates who'll also upload (Editor access), then copy the
+//     ID from its URL (drive.google.com/drive/folders/THIS_PART).
+const GOOGLE_OAUTH_CLIENT_ID='669726671638-ejljcv76ng6m61j5irb9e9s4v43tl9ud.apps.googleusercontent.com';
+const ANNEX_DRIVE_FOLDER_ID='1FmxKMm2b44LsUUFSI8Fau8QzstPqBHvg';
+let driveTokenClient=null,cachedDriveToken=null,cachedDriveTokenExpiry=0;
 const API_KEY='AIzaSyBw6Q33uvm5kFbCRwQSQecvlPHT7ICKdmc';
 const GAPI_BASE=`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}`;
 // Sheet tab names
@@ -1504,18 +1522,55 @@ function renderAnnexTab(){
   </div>`;
 }
 
+// Requests a Drive upload token for the person currently using the browser —
+// shows Google's own sign-in/consent popup the first time (or whenever the
+// short-lived token has expired), then reuses it silently for later uploads
+// in the same session.
+function getDriveToken(){
+  return new Promise((resolve,reject)=>{
+    if(cachedDriveToken&&Date.now()<cachedDriveTokenExpiry-30000){resolve(cachedDriveToken);return;}
+    if(typeof google==='undefined'||!google.accounts?.oauth2){reject(new Error('Google sign-in script did not load — check your internet connection and try again'));return;}
+    if(!GOOGLE_OAUTH_CLIENT_ID){reject(new Error('Annex upload is not set up yet — GOOGLE_OAUTH_CLIENT_ID is blank'));return;}
+    if(!driveTokenClient){
+      driveTokenClient=google.accounts.oauth2.initTokenClient({
+        client_id:GOOGLE_OAUTH_CLIENT_ID,
+        scope:'https://www.googleapis.com/auth/drive.file',
+        callback:()=>{} // overridden per-request below
+      });
+    }
+    driveTokenClient.callback=(resp)=>{
+      if(resp.error){reject(new Error(resp.error));return;}
+      cachedDriveToken=resp.access_token;
+      cachedDriveTokenExpiry=Date.now()+(resp.expires_in||3600)*1000;
+      resolve(cachedDriveToken);
+    };
+    driveTokenClient.requestAccessToken({prompt:cachedDriveToken?'':'consent'});
+  });
+}
+
 async function uploadAnnexPdf(i,file){
   if(!state.isEditor||!file)return;
   if(file.type!=='application/pdf'){toast('Please select a PDF file','#C84040');return;}
   if(file.size>10*1024*1024){toast('File too large — max 10MB','#C84040');return;}
-  if(!PROXY_BASE){toast('Set up the Cloudflare proxy first — see the deployment notes','#C84040');return;}
+  if(!ANNEX_DRIVE_FOLDER_ID){toast('Set up ANNEX_DRIVE_FOLDER_ID first — see the deployment notes','#C84040');return;}
   const name=schoolsInfo[i]?.name||'school';
-  toast(`Uploading ${name}'s PDF…`,'#4F8EF7');
   try{
-    const form=new FormData();
-    form.append('file',file,file.name);
-    form.append('filename',`${name} - Annex.pdf`);
-    const res=await fetch(`${PROXY_BASE}/drive-upload`,{method:'POST',body:form});
+    toast('Sign in with Google to upload…','#4F8EF7');
+    const token=await getDriveToken();
+    toast(`Uploading ${name}'s PDF…`,'#4F8EF7');
+    const metadata={name:`${name} - Annex.pdf`,parents:[ANNEX_DRIVE_FOLDER_ID]};
+    const boundary='yphs-'+Date.now();
+    const fileBytes=new Uint8Array(await file.arrayBuffer());
+    const encoder=new TextEncoder();
+    const pre=encoder.encode(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: application/pdf\r\n\r\n`);
+    const post=encoder.encode(`\r\n--${boundary}--`);
+    const body=new Uint8Array(pre.length+fileBytes.length+post.length);
+    body.set(pre,0);body.set(fileBytes,pre.length);body.set(post,pre.length+fileBytes.length);
+    const res=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink,name',{
+      method:'POST',
+      headers:{Authorization:`Bearer ${token}`,'Content-Type':`multipart/related; boundary=${boundary}`},
+      body
+    });
     const data=await res.json();
     if(res.ok&&data.id){
       schoolsInfo[i].annexUrl=data.webViewLink||'';
@@ -1525,10 +1580,10 @@ async function uploadAnnexPdf(i,file){
       toast(`${name}'s PDF uploaded ✓`,'#3D9E6A');
       render();
     }else{
-      toast('Upload failed: '+(data.error?.message||data.error||`HTTP ${res.status}`),'#C84040');
+      toast('Upload failed: '+(data.error?.message||`HTTP ${res.status}`),'#C84040');
     }
   }catch(e){
-    toast('Upload failed — check your connection and try again','#C84040');
+    toast('Upload failed: '+e.message,'#C84040');
   }
 }
 function removeAnnexPdf(i){
