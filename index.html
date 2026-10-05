@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>YPHS Health Screening Scheduler</title>
-<!-- BUILD MARKER: v2026-09-11-fixes23 — if you can't find this exact string with
+<!-- BUILD MARKER: v2026-09-11-fixes24 — if you can't find this exact string with
      Ctrl/Cmd+F while viewing the page source, you are opening a stale/old copy
      of this file, not the latest one. -->
 <style>
@@ -270,7 +270,7 @@ body{background:var(--bg);color:var(--text);overflow:hidden;}
       <button class="btn-icon" onclick="toggleTheme()" title="Toggle theme">🌙</button>
       <button class="btn-icon" onclick="exportPDF()" title="Export PDF" id="pdf-btn" style="display:none">🖨</button>
       <div class="lock-badge" id="lock-badge" onclick="showPinModal()">🔒 View only</div>
-      <div title="Build version — confirms you're on the latest file" style="font-size:9px;color:var(--text3);opacity:.5;padding:2px 6px;font-family:'JetBrains Mono',monospace">v2026-09-11-fixes23</div>
+      <div title="Build version — confirms you're on the latest file" style="font-size:9px;color:var(--text3);opacity:.5;padding:2px 6px;font-family:'JetBrains Mono',monospace">v2026-09-11-fixes24</div>
       <button class="btn btn-primary btn-sm" id="add-btn" onclick="showAddSchool()" style="display:none">+ Add School</button>
     </div>
   </div>
@@ -370,7 +370,7 @@ let SITE_PASSWORD = localStorage.getItem('yphs_site_pw') || 'YPHS2026';
 let EDITOR_PIN    = localStorage.getItem('yphs_editor_pin') || '2027';
 // Keep PIN alias for backward compatibility with existing checkPin() calls
 const SHEET_ID='11MDEThuNiyEiZaKh6Yqt-CdwXG5K0V1IfBI4T9Mhli8';
-const BUILD_VERSION='v2026-09-11-fixes23';
+const BUILD_VERSION='v2026-09-11-fixes24';
 // If a newer version of this page has been deployed, this tab is running old code
 // against possibly-newer data. Saving from it could overwrite other people's work
 // (or drop columns added by the update), so it is blocked until the page is refreshed.
@@ -430,8 +430,7 @@ const PROXY_BASE='https://yhpsscheduler.ganzo-purevmaa.workers.dev';
 //   ANNEX_DRIVE_FOLDER_ID: create a folder in your own Google Drive, share it
 //     with any teammates who'll also upload (Editor access), then copy the
 //     ID from its URL (drive.google.com/drive/folders/THIS_PART).
-const GOOGLE_OAUTH_CLIENT_ID='669726671638-ejljcv76ng6m61j5irb9e9s4v43tl9ud.apps.googleusercontent.com
-';
+const GOOGLE_OAUTH_CLIENT_ID='669726671638-ejljcv76ng6m61j5irb9e9s4v43tl9ud.apps.googleusercontent.com';
 const ANNEX_DRIVE_FOLDER_ID='1FmxKMm2b44LsUUFSI8Fau8QzstPqBHvg';
 let driveTokenClient=null,cachedDriveToken=null,cachedDriveTokenExpiry=0;
 const API_KEY='AIzaSyBw6Q33uvm5kFbCRwQSQecvlPHT7ICKdmc';
