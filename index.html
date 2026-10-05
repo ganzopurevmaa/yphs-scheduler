@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>YPHS Health Screening Scheduler</title>
-<!-- BUILD MARKER: v2026-09-11-fixes21 — if you can't find this exact string with
+<!-- BUILD MARKER: v2026-09-11-fixes22 — if you can't find this exact string with
      Ctrl/Cmd+F while viewing the page source, you are opening a stale/old copy
      of this file, not the latest one. -->
 <style>
@@ -269,7 +269,7 @@ body{background:var(--bg);color:var(--text);overflow:hidden;}
       <button class="btn-icon" onclick="toggleTheme()" title="Toggle theme">🌙</button>
       <button class="btn-icon" onclick="exportPDF()" title="Export PDF" id="pdf-btn" style="display:none">🖨</button>
       <div class="lock-badge" id="lock-badge" onclick="showPinModal()">🔒 View only</div>
-      <div title="Build version — confirms you're on the latest file" style="font-size:9px;color:var(--text3);opacity:.5;padding:2px 6px;font-family:'JetBrains Mono',monospace">v2026-09-11-fixes21</div>
+      <div title="Build version — confirms you're on the latest file" style="font-size:9px;color:var(--text3);opacity:.5;padding:2px 6px;font-family:'JetBrains Mono',monospace">v2026-09-11-fixes22</div>
       <button class="btn btn-primary btn-sm" id="add-btn" onclick="showAddSchool()" style="display:none">+ Add School</button>
     </div>
   </div>
@@ -369,7 +369,7 @@ let SITE_PASSWORD = localStorage.getItem('yphs_site_pw') || 'YPHS2026';
 let EDITOR_PIN    = localStorage.getItem('yphs_editor_pin') || '2027';
 // Keep PIN alias for backward compatibility with existing checkPin() calls
 const SHEET_ID='11MDEThuNiyEiZaKh6Yqt-CdwXG5K0V1IfBI4T9Mhli8';
-const BUILD_VERSION='v2026-09-11-fixes21';
+const BUILD_VERSION='v2026-09-11-fixes22';
 // If a newer version of this page has been deployed, this tab is running old code
 // against possibly-newer data. Saving from it could overwrite other people's work
 // (or drop columns added by the update), so it is blocked until the page is refreshed.
@@ -665,13 +665,14 @@ function infoToRow(s){
   return[s.name||'',s.address||'',s.postal||'',s.contact||'',s.phone||'',s.email||'',
          s.p1c||'',s.p1e||'',s.p2c||'',s.p2e||'',s.p3c||'',s.p3e||'',
          s.p4c||'',s.p4e||'',s.p5c||'',s.p5e||'',s.p6c||'',s.p6e||'',
-         s.lat||'',s.lng||''];
+         s.lat||'',s.lng||'',s.annexUrl||'',s.annexFilename||'',s.annexUploadedAt||''];
 }
 function rowToInfo(r){
   return{name:r[0]||'',address:r[1]||'',postal:r[2]||'',contact:r[3]||'',phone:r[4]||'',email:r[5]||'',
          p1c:r[6]||'',p1e:r[7]||'',p2c:r[8]||'',p2e:r[9]||'',p3c:r[10]||'',p3e:r[11]||'',
          p4c:r[12]||'',p4e:r[13]||'',p5c:r[14]||'',p5e:r[15]||'',p6c:r[16]||'',p6e:r[17]||'',
-         lat:r[18]?parseFloat(r[18]):null,lng:r[19]?parseFloat(r[19]):null};
+         lat:r[18]?parseFloat(r[18]):null,lng:r[19]?parseFloat(r[19]):null,
+         annexUrl:r[20]||'',annexFilename:r[21]||'',annexUploadedAt:r[22]||''};
 }
 
 async function loadFromSheets(){
@@ -680,7 +681,7 @@ async function loadFromSheets(){
     // Load all 3 tabs in parallel
     const [sRes,iRes,lRes,boRes,holRes]=await Promise.all([
       gFetch(`/values/${TAB_SCHOOLS}!A2:N`),
-      gFetch(`/values/${TAB_INFO}!A2:T`),
+      gFetch(`/values/${TAB_INFO}!A2:W`),
       gFetch(`/values/${TAB_LOG}!A2:B`),
       gFetch(`/values/Blockouts!A2:D`).catch(()=>({values:[]})),
       gFetch(`/values/CustomHols!A2:E`).catch(()=>({values:[]})),
@@ -748,7 +749,7 @@ async function saveAllToSheets(){
       writes.push(writeTab(TAB_SCHOOLS, sRows));
     }
     if(toWrite.has('info')){
-      const iRows=[['name','address','postal','contact','phone','email','p1c','p1e','p2c','p2e','p3c','p3e','p4c','p4e','p5c','p5e','p6c','p6e','lat','lng'],
+      const iRows=[['name','address','postal','contact','phone','email','p1c','p1e','p2c','p2e','p3c','p3e','p4c','p4e','p5c','p5e','p6c','p6e','lat','lng','annexUrl','annexFilename','annexUploadedAt'],
         ...schoolsInfo.map(infoToRow)];
       writes.push(writeTab(TAB_INFO, iRows));
     }
@@ -1262,7 +1263,14 @@ function renderDashboard(){
   // school — dedupe by name so it isn't double-counted here.
   const hmgOrBothNames=new Set(ys.filter(s=>getSub(s)==='HMG'||getSub(s)==='BOTH').map(s=>s.name));
   const hmgOrBothCount=hmgOrBothNames.size;
-  const teamStats=TEAMS.map(t=>{const ts=ys.filter(s=>s.team===t.code);return{...t,schools:ts.length,days:ts.reduce((a,s)=>a+(netDays(s.plannedStart,s.plannedEnd,yr)||0),0)};});
+  // A school split into separate HMG and SCP entries under the same team is
+  // still one school for that team — dedupe the "schools" count by name, but
+  // keep "days" as a true sum of actual screening days across both entries.
+  const teamStats=TEAMS.map(t=>{
+    const ts=ys.filter(s=>s.team===t.code);
+    const uniqueNames=new Set(ts.map(s=>s.name));
+    return{...t,schools:uniqueNames.size,days:ts.reduce((a,s)=>a+(netDays(s.plannedStart,s.plannedEnd,yr)||0),0)};
+  });
   const maxDays=Math.max(...teamStats.map(t=>t.days),1);
   const monthCounts=MONTHS.map((mn,mi)=>ys.filter(s=>s.plannedStart&&new Date(s.plannedStart).getMonth()===mi).length);
   const maxMo=Math.max(...monthCounts,1);
@@ -1456,6 +1464,82 @@ function copyWA(){
 
 // ── SCHOOLS INFO ───────────────────────────────────────────────────────────
 function renderSchools(){
+  if(!state.schoolsSubTab)state.schoolsSubTab='directory';
+  const tabs=`<div class="view-tabs" style="margin-bottom:12px">
+    <div class="view-tab ${state.schoolsSubTab==='directory'?'active':''}" onclick="setSchoolsSubTab('directory')">Directory</div>
+    <div class="view-tab ${state.schoolsSubTab==='annex'?'active':''}" onclick="setSchoolsSubTab('annex')">Annex - FormSG</div>
+  </div>`;
+  return tabs+(state.schoolsSubTab==='annex'?renderAnnexTab():renderSchoolsDirectory());
+}
+function setSchoolsSubTab(t){state.schoolsSubTab=t;render();}
+
+function renderAnnexTab(){
+  const q=(state.annexSearch||'').trim().toLowerCase();
+  const named=schoolsInfo.filter(s=>s.name);
+  const matches=named.filter(s=>!q||s.name.toLowerCase().includes(q));
+  const ed=state.isEditor;
+  const uploadedCount=named.filter(s=>s.annexUrl).length;
+  const rows=matches.map(s=>{
+    const i=schoolsInfo.indexOf(s);
+    return`<tr>
+      <td style="font-weight:600">${escapeHtml(s.name)}</td>
+      <td>${s.annexUrl?`<a href="${escapeHtml(s.annexUrl)}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none">📄 ${escapeHtml(s.annexFilename||'View PDF')}</a>`:`<span style="color:var(--text3);font-size:11px">No PDF uploaded</span>`}</td>
+      <td style="color:var(--text3);font-size:11px">${s.annexUploadedAt||''}</td>
+      <td style="text-align:center;white-space:nowrap">
+        ${ed?`<label class="btn btn-ghost btn-sm" style="cursor:pointer">${s.annexUrl?'🔄 Replace':'⬆ Upload'}<input type="file" accept="application/pdf" style="display:none" onchange="uploadAnnexPdf(${i},this.files[0])"></label>`:''}
+        ${ed&&s.annexUrl?`<button class="btn btn-ghost btn-sm" onclick="removeAnnexPdf(${i})" style="color:#C84040">✕</button>`:''}
+      </td>
+    </tr>`;
+  }).join('');
+  return`<div style="max-width:800px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+      <input type="text" placeholder="🔍 Search schools…" value="${escapeHtml(state.annexSearch||'')}" oninput="state.annexSearch=this.value;render()" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:7px 10px;color:var(--text);font-size:12px;outline:none;width:240px">
+      <span style="font-size:11px;color:var(--text3)">${uploadedCount} of ${named.length} schools have a PDF on file</span>
+    </div>
+    ${!matches.length?`<div class="empty"><div class="empty-icon">📄</div><div class="empty-text">No matching schools</div></div>`:`
+    <div class="data-table"><table>
+      <thead><tr><th>School Name</th><th>Annex PDF</th><th>Uploaded</th><th>Actions</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`}
+  </div>`;
+}
+
+async function uploadAnnexPdf(i,file){
+  if(!state.isEditor||!file)return;
+  if(file.type!=='application/pdf'){toast('Please select a PDF file','#C84040');return;}
+  if(file.size>10*1024*1024){toast('File too large — max 10MB','#C84040');return;}
+  if(!PROXY_BASE){toast('Set up the Cloudflare proxy first — see the deployment notes','#C84040');return;}
+  const name=schoolsInfo[i]?.name||'school';
+  toast(`Uploading ${name}'s PDF…`,'#4F8EF7');
+  try{
+    const form=new FormData();
+    form.append('file',file,file.name);
+    form.append('filename',`${name} - Annex.pdf`);
+    const res=await fetch(`${PROXY_BASE}/drive-upload`,{method:'POST',body:form});
+    const data=await res.json();
+    if(res.ok&&data.id){
+      schoolsInfo[i].annexUrl=data.webViewLink||'';
+      schoolsInfo[i].annexFilename=data.name||file.name;
+      schoolsInfo[i].annexUploadedAt=d2s(new Date());
+      saveInfo();
+      toast(`${name}'s PDF uploaded ✓`,'#3D9E6A');
+      render();
+    }else{
+      toast('Upload failed: '+(data.error?.message||data.error||`HTTP ${res.status}`),'#C84040');
+    }
+  }catch(e){
+    toast('Upload failed — check your connection and try again','#C84040');
+  }
+}
+function removeAnnexPdf(i){
+  if(!state.isEditor)return;
+  const s=schoolsInfo[i];
+  if(!s||!confirm(`Remove the PDF link for "${s.name}"? The file itself stays in Google Drive — this only unlinks it from the school.`))return;
+  s.annexUrl='';s.annexFilename='';s.annexUploadedAt='';
+  saveInfo();toast('PDF link removed');render();
+}
+
+function renderSchoolsDirectory(){
   const ed=state.isEditor;
   while(schoolsInfo.length<30)schoolsInfo.push({});
   let rows=schoolsInfo.map((s,i)=>{
