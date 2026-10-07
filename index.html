@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>YPHS Health Screening Scheduler</title>
-<!-- BUILD MARKER: v2026-09-11-fixes24 — if you can't find this exact string with
+<!-- BUILD MARKER: v2026-09-11-fixes25 — if you can't find this exact string with
      Ctrl/Cmd+F while viewing the page source, you are opening a stale/old copy
      of this file, not the latest one. -->
 <style>
@@ -270,7 +270,7 @@ body{background:var(--bg);color:var(--text);overflow:hidden;}
       <button class="btn-icon" onclick="toggleTheme()" title="Toggle theme">🌙</button>
       <button class="btn-icon" onclick="exportPDF()" title="Export PDF" id="pdf-btn" style="display:none">🖨</button>
       <div class="lock-badge" id="lock-badge" onclick="showPinModal()">🔒 View only</div>
-      <div title="Build version — confirms you're on the latest file" style="font-size:9px;color:var(--text3);opacity:.5;padding:2px 6px;font-family:'JetBrains Mono',monospace">v2026-09-11-fixes24</div>
+      <div title="Build version — confirms you're on the latest file" style="font-size:9px;color:var(--text3);opacity:.5;padding:2px 6px;font-family:'JetBrains Mono',monospace">v2026-09-11-fixes25</div>
       <button class="btn btn-primary btn-sm" id="add-btn" onclick="showAddSchool()" style="display:none">+ Add School</button>
     </div>
   </div>
@@ -370,7 +370,7 @@ let SITE_PASSWORD = localStorage.getItem('yphs_site_pw') || 'YPHS2026';
 let EDITOR_PIN    = localStorage.getItem('yphs_editor_pin') || '2027';
 // Keep PIN alias for backward compatibility with existing checkPin() calls
 const SHEET_ID='11MDEThuNiyEiZaKh6Yqt-CdwXG5K0V1IfBI4T9Mhli8';
-const BUILD_VERSION='v2026-09-11-fixes24';
+const BUILD_VERSION='v2026-09-11-fixes25';
 // If a newer version of this page has been deployed, this tab is running old code
 // against possibly-newer data. Saving from it could overwrite other people's work
 // (or drop columns added by the update), so it is blocked until the page is refreshed.
@@ -1510,9 +1510,14 @@ function renderAnnexTab(){
     </tr>`;
   }).join('');
   return`<div style="max-width:800px">
+    ${ed&&!hasValidDriveToken()?`<div style="background:rgba(200,144,32,.12);border:1px solid var(--pending-c);border-radius:var(--r);padding:10px 12px;margin-bottom:12px;display:flex;align-items:center;gap:10px">
+      <span style="font-size:12px">🔗 Connect your Google account once to enable uploading PDFs this session.</span>
+      <button class="btn btn-primary btn-sm" onclick="connectGoogleDrive()" style="margin-left:auto">Connect Google Account</button>
+    </div>`:''}
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
       <input type="text" placeholder="🔍 Search schools…" value="${escapeHtml(state.annexSearch||'')}" oninput="state.annexSearch=this.value;render()" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:7px 10px;color:var(--text);font-size:12px;outline:none;width:240px">
       <span style="font-size:11px;color:var(--text3)">${uploadedCount} of ${named.length} schools have a PDF on file</span>
+      ${ed&&hasValidDriveToken()?`<span style="font-size:11px;color:#3D9E6A;margin-left:auto">✓ Google account connected</span>`:''}
     </div>
     ${!matches.length?`<div class="empty"><div class="empty-icon">📄</div><div class="empty-text">No matching schools</div></div>`:`
     <div class="data-table"><table>
@@ -1526,37 +1531,42 @@ function renderAnnexTab(){
 // shows Google's own sign-in/consent popup the first time (or whenever the
 // short-lived token has expired), then reuses it silently for later uploads
 // in the same session.
-function getDriveToken(){
-  return new Promise((resolve,reject)=>{
-    if(cachedDriveToken&&Date.now()<cachedDriveTokenExpiry-30000){resolve(cachedDriveToken);return;}
-    if(typeof google==='undefined'||!google.accounts?.oauth2){reject(new Error('Google sign-in script did not load — check your internet connection and try again'));return;}
-    if(!GOOGLE_OAUTH_CLIENT_ID){reject(new Error('Annex upload is not set up yet — GOOGLE_OAUTH_CLIENT_ID is blank'));return;}
-    if(!driveTokenClient){
-      driveTokenClient=google.accounts.oauth2.initTokenClient({
-        client_id:GOOGLE_OAUTH_CLIENT_ID,
-        scope:'https://www.googleapis.com/auth/drive.file',
-        callback:()=>{} // overridden per-request below
-      });
-    }
-    driveTokenClient.callback=(resp)=>{
-      if(resp.error){reject(new Error(resp.error));return;}
-      cachedDriveToken=resp.access_token;
-      cachedDriveTokenExpiry=Date.now()+(resp.expires_in||3600)*1000;
-      resolve(cachedDriveToken);
-    };
-    driveTokenClient.requestAccessToken({prompt:cachedDriveToken?'':'consent'});
-  });
+function hasValidDriveToken(){return !!(cachedDriveToken&&Date.now()<cachedDriveTokenExpiry-30000);}
+
+// Must be called as the DIRECT result of a real click — e.g. a button's onclick,
+// never from inside a file input's onchange (which fires after the native file
+// picker closes, and by then browsers no longer treat it as a fresh enough user
+// gesture to allow a new popup — they silently block it, logging something like
+// "Failed to open popup window... Maybe blocked by the browser?" with no visible
+// warning icon). Keeping sign-in as its own explicit step avoids that entirely.
+function connectGoogleDrive(){
+  if(typeof google==='undefined'||!google.accounts?.oauth2){toast('Google sign-in script did not load — check your internet connection and try again','#C84040');return;}
+  if(!GOOGLE_OAUTH_CLIENT_ID){toast('Annex upload is not set up yet — GOOGLE_OAUTH_CLIENT_ID is blank','#C84040');return;}
+  if(!driveTokenClient){
+    driveTokenClient=google.accounts.oauth2.initTokenClient({
+      client_id:GOOGLE_OAUTH_CLIENT_ID,
+      scope:'https://www.googleapis.com/auth/drive.file',
+      callback:()=>{} // overridden below
+    });
+  }
+  driveTokenClient.callback=(resp)=>{
+    if(resp.error){toast('Google sign-in failed: '+resp.error,'#C84040');return;}
+    cachedDriveToken=resp.access_token;
+    cachedDriveTokenExpiry=Date.now()+(resp.expires_in||3600)*1000;
+    toast('Google account connected ✓ — you can upload PDFs now','#3D9E6A');
+    render();
+  };
+  driveTokenClient.requestAccessToken({prompt:'consent'});
 }
 
 async function uploadAnnexPdf(i,file){
   if(!state.isEditor||!file)return;
+  if(!hasValidDriveToken()){toast('Click "Connect Google Account" first, then try uploading again','#C87020');return;}
   if(file.type!=='application/pdf'){toast('Please select a PDF file','#C84040');return;}
   if(file.size>10*1024*1024){toast('File too large — max 10MB','#C84040');return;}
   if(!ANNEX_DRIVE_FOLDER_ID){toast('Set up ANNEX_DRIVE_FOLDER_ID first — see the deployment notes','#C84040');return;}
   const name=schoolsInfo[i]?.name||'school';
   try{
-    toast('Sign in with Google to upload…','#4F8EF7');
-    const token=await getDriveToken();
     toast(`Uploading ${name}'s PDF…`,'#4F8EF7');
     const metadata={name:`${name} - Annex.pdf`,parents:[ANNEX_DRIVE_FOLDER_ID]};
     const boundary='yphs-'+Date.now();
@@ -1568,7 +1578,7 @@ async function uploadAnnexPdf(i,file){
     body.set(pre,0);body.set(fileBytes,pre.length);body.set(post,pre.length+fileBytes.length);
     const res=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink,name',{
       method:'POST',
-      headers:{Authorization:`Bearer ${token}`,'Content-Type':`multipart/related; boundary=${boundary}`},
+      headers:{Authorization:`Bearer ${cachedDriveToken}`,'Content-Type':`multipart/related; boundary=${boundary}`},
       body
     });
     const data=await res.json();
@@ -1580,7 +1590,8 @@ async function uploadAnnexPdf(i,file){
       toast(`${name}'s PDF uploaded ✓`,'#3D9E6A');
       render();
     }else{
-      toast('Upload failed: '+(data.error?.message||`HTTP ${res.status}`),'#C84040');
+      if(res.status===401){cachedDriveToken=null;toast('Your Google connection expired — click "Connect Google Account" again','#C87020');render();}
+      else toast('Upload failed: '+(data.error?.message||`HTTP ${res.status}`),'#C84040');
     }
   }catch(e){
     toast('Upload failed: '+e.message,'#C84040');
