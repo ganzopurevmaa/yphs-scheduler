@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>YPHS Health Screening Scheduler</title>
-<!-- BUILD MARKER: v2026-09-11-fixes25 — if you can't find this exact string with
+<!-- BUILD MARKER: v2026-09-11-fixes27 — if you can't find this exact string with
      Ctrl/Cmd+F while viewing the page source, you are opening a stale/old copy
      of this file, not the latest one. -->
 <style>
@@ -270,7 +270,7 @@ body{background:var(--bg);color:var(--text);overflow:hidden;}
       <button class="btn-icon" onclick="toggleTheme()" title="Toggle theme">🌙</button>
       <button class="btn-icon" onclick="exportPDF()" title="Export PDF" id="pdf-btn" style="display:none">🖨</button>
       <div class="lock-badge" id="lock-badge" onclick="showPinModal()">🔒 View only</div>
-      <div title="Build version — confirms you're on the latest file" style="font-size:9px;color:var(--text3);opacity:.5;padding:2px 6px;font-family:'JetBrains Mono',monospace">v2026-09-11-fixes25</div>
+      <div title="Build version — confirms you're on the latest file" style="font-size:9px;color:var(--text3);opacity:.5;padding:2px 6px;font-family:'JetBrains Mono',monospace">v2026-09-11-fixes27</div>
       <button class="btn btn-primary btn-sm" id="add-btn" onclick="showAddSchool()" style="display:none">+ Add School</button>
     </div>
   </div>
@@ -370,7 +370,7 @@ let SITE_PASSWORD = localStorage.getItem('yphs_site_pw') || 'YPHS2026';
 let EDITOR_PIN    = localStorage.getItem('yphs_editor_pin') || '2027';
 // Keep PIN alias for backward compatibility with existing checkPin() calls
 const SHEET_ID='11MDEThuNiyEiZaKh6Yqt-CdwXG5K0V1IfBI4T9Mhli8';
-const BUILD_VERSION='v2026-09-11-fixes25';
+const BUILD_VERSION='v2026-09-11-fixes27';
 // If a newer version of this page has been deployed, this tab is running old code
 // against possibly-newer data. Saving from it could overwrite other people's work
 // (or drop columns added by the update), so it is blocked until the page is refreshed.
@@ -525,7 +525,13 @@ let state={view:'calendar',year:2026,month:new Date().getMonth(),calView:'month'
            isEditor:false,editingId:null,search:'',ctxId:null,
            sortCol:null,sortDir:1,filterTeam:'',filterStatus:'',filterMonth:null};
 let schools=JSON.parse(localStorage.getItem('yphs_schools')||'[]');
-let schoolsInfo=JSON.parse(localStorage.getItem('yphs_info')||'[]');
+// Schools Info is kept per year. Each entry carries a `year`; entries saved before
+// this existed have none and are treated as 2026 (the year the data was entered for).
+function infoYear(s){return (s&&s.year)||2026;}
+function infoOfYear(yr){return schoolsInfo.filter(s=>infoYear(s)===yr);}
+function normalizeInfoYears(a){a.forEach(s=>{if(!s.year)s.year=2026;});return a;}
+function infoHasContent(s){return !!(s.name||s.address||s.postal||s.contact||s.phone||s.email||s.annexUrl);}
+let schoolsInfo=normalizeInfoYears(JSON.parse(localStorage.getItem('yphs_info')||'[]'));
 let activityLog=JSON.parse(localStorage.getItem('yphs_log')||'[]');
 // Custom holiday overrides & block-out dates (per year)
 let customHols=JSON.parse(localStorage.getItem('yphs_hols')||'{}');
@@ -683,14 +689,15 @@ function infoToRow(s){
   return[s.name||'',s.address||'',s.postal||'',s.contact||'',s.phone||'',s.email||'',
          s.p1c||'',s.p1e||'',s.p2c||'',s.p2e||'',s.p3c||'',s.p3e||'',
          s.p4c||'',s.p4e||'',s.p5c||'',s.p5e||'',s.p6c||'',s.p6e||'',
-         s.lat||'',s.lng||'',s.annexUrl||'',s.annexFilename||'',s.annexUploadedAt||''];
+         s.lat||'',s.lng||'',s.annexUrl||'',s.annexFilename||'',s.annexUploadedAt||'',infoYear(s)];
 }
 function rowToInfo(r){
   return{name:r[0]||'',address:r[1]||'',postal:r[2]||'',contact:r[3]||'',phone:r[4]||'',email:r[5]||'',
          p1c:r[6]||'',p1e:r[7]||'',p2c:r[8]||'',p2e:r[9]||'',p3c:r[10]||'',p3e:r[11]||'',
          p4c:r[12]||'',p4e:r[13]||'',p5c:r[14]||'',p5e:r[15]||'',p6c:r[16]||'',p6e:r[17]||'',
          lat:r[18]?parseFloat(r[18]):null,lng:r[19]?parseFloat(r[19]):null,
-         annexUrl:r[20]||'',annexFilename:r[21]||'',annexUploadedAt:r[22]||''};
+         annexUrl:r[20]||'',annexFilename:r[21]||'',annexUploadedAt:r[22]||'',
+         year:parseInt(r[23])||2026};
 }
 
 async function loadFromSheets(){
@@ -699,7 +706,7 @@ async function loadFromSheets(){
     // Load all 3 tabs in parallel
     const [sRes,iRes,lRes,boRes,holRes]=await Promise.all([
       gFetch(`/values/${TAB_SCHOOLS}!A2:N`),
-      gFetch(`/values/${TAB_INFO}!A2:W`),
+      gFetch(`/values/${TAB_INFO}!A2:X`),
       gFetch(`/values/${TAB_LOG}!A2:B`),
       gFetch(`/values/Blockouts!A2:D`).catch(()=>({values:[]})),
       gFetch(`/values/CustomHols!A2:E`).catch(()=>({values:[]})),
@@ -721,7 +728,7 @@ async function loadFromSheets(){
     });
     localStorage.setItem('yphs_blockouts',JSON.stringify(blockouts));
     localStorage.setItem('yphs_hols',JSON.stringify(customHols));
-    schoolsInfo=iRows.map(rowToInfo);
+    schoolsInfo=iRows.filter(r=>r.some(c=>c!==undefined&&c!=='')).map(rowToInfo);
     activityLog=lRows.map(r=>({ts:r[0]||'',msg:r[1]||''})).filter(r=>r.ts);
     // Mirror to localStorage as offline cache
     localStorage.setItem('yphs_schools',JSON.stringify(schools));
@@ -736,7 +743,7 @@ async function loadFromSheets(){
     setSyncStatus('error');
     // Fall back to localStorage cache
     schools=JSON.parse(localStorage.getItem('yphs_schools')||'[]');
-    schoolsInfo=JSON.parse(localStorage.getItem('yphs_info')||'[]');
+    schoolsInfo=normalizeInfoYears(JSON.parse(localStorage.getItem('yphs_info')||'[]'));
     activityLog=JSON.parse(localStorage.getItem('yphs_log')||'[]');
     showSyncError('Could not load from Google Sheets. Showing cached data. Check your internet connection.');
     updateNotifBadge();
@@ -767,8 +774,8 @@ async function saveAllToSheets(){
       writes.push(writeTab(TAB_SCHOOLS, sRows));
     }
     if(toWrite.has('info')){
-      const iRows=[['name','address','postal','contact','phone','email','p1c','p1e','p2c','p2e','p3c','p3e','p4c','p4e','p5c','p5e','p6c','p6e','lat','lng','annexUrl','annexFilename','annexUploadedAt'],
-        ...schoolsInfo.map(infoToRow)];
+      const iRows=[['name','address','postal','contact','phone','email','p1c','p1e','p2c','p2e','p3c','p3e','p4c','p4e','p5c','p5e','p6c','p6e','lat','lng','annexUrl','annexFilename','annexUploadedAt','year'],
+        ...schoolsInfo.filter(infoHasContent).map(infoToRow)];
       writes.push(writeTab(TAB_INFO, iRows));
     }
     if(toWrite.has('log')){
@@ -931,7 +938,7 @@ function onSearch(v){state.search=v.toLowerCase();render();}
 
 // ── RENDER ─────────────────────────────────────────────────────────────────
 function render(){
-  const titles={calendar:`Calendar — ${MONTHS[state.month]} ${state.year}`,details:`Details — ${state.year}`,dashboard:`Dashboard — ${state.year}`,notifications:'🔔 Alerts',whatsapp:'💬 WhatsApp Summary',schools:'Schools Info',map:'🗺️ School Locations',archive:`Archive — ${state.year}`,log:'Activity Log',settings:'⚙️ Settings — Holidays & Block-out Dates'};
+  const titles={calendar:`Calendar — ${MONTHS[state.month]} ${state.year}`,details:`Details — ${state.year}`,dashboard:`Dashboard — ${state.year}`,notifications:'🔔 Alerts',whatsapp:'💬 WhatsApp Summary',schools:`Schools Info — ${state.year}`,map:`🗺️ School Locations — ${state.year}`,archive:`Archive — ${state.year}`,log:'Activity Log',settings:'⚙️ Settings — Holidays & Block-out Dates'};
   document.getElementById('topbar-title').textContent=titles[state.view]||'';
   updateProgress();
   const c=document.getElementById('content');
@@ -1491,12 +1498,14 @@ function renderSchools(){
 }
 function setSchoolsSubTab(t){state.schoolsSubTab=t;render();}
 
-function renderAnnexTab(){
+// Only the results list is rebuilt while typing — the search box itself must stay
+// in place, otherwise it loses focus after every single keystroke.
+function annexListHtml(){
   const q=(state.annexSearch||'').trim().toLowerCase();
-  const named=schoolsInfo.filter(s=>s.name);
+  const named=infoOfYear(state.year).filter(s=>s.name);
   const matches=named.filter(s=>!q||s.name.toLowerCase().includes(q));
   const ed=state.isEditor;
-  const uploadedCount=named.filter(s=>s.annexUrl).length;
+  if(!matches.length)return`<div class="empty"><div class="empty-icon">📄</div><div class="empty-text">No matching schools</div></div>`;
   const rows=matches.map(s=>{
     const i=schoolsInfo.indexOf(s);
     return`<tr>
@@ -1509,21 +1518,33 @@ function renderAnnexTab(){
       </td>
     </tr>`;
   }).join('');
+  return`<div class="data-table"><table>
+    <thead><tr><th>School Name</th><th>Annex PDF</th><th>Uploaded</th><th>Actions</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>`;
+}
+function annexCountText(){
+  const named=infoOfYear(state.year).filter(s=>s.name);
+  return`${named.filter(s=>s.annexUrl).length} of ${named.length} schools have a ${state.year} PDF on file`;
+}
+function onAnnexSearch(v){
+  state.annexSearch=v;
+  const list=document.getElementById('annex-list');
+  if(list)list.innerHTML=annexListHtml();
+}
+function renderAnnexTab(){
+  const ed=state.isEditor;
   return`<div style="max-width:800px">
     ${ed&&!hasValidDriveToken()?`<div style="background:rgba(200,144,32,.12);border:1px solid var(--pending-c);border-radius:var(--r);padding:10px 12px;margin-bottom:12px;display:flex;align-items:center;gap:10px">
       <span style="font-size:12px">🔗 Connect your Google account once to enable uploading PDFs this session.</span>
       <button class="btn btn-primary btn-sm" onclick="connectGoogleDrive()" style="margin-left:auto">Connect Google Account</button>
     </div>`:''}
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-      <input type="text" placeholder="🔍 Search schools…" value="${escapeHtml(state.annexSearch||'')}" oninput="state.annexSearch=this.value;render()" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:7px 10px;color:var(--text);font-size:12px;outline:none;width:240px">
-      <span style="font-size:11px;color:var(--text3)">${uploadedCount} of ${named.length} schools have a PDF on file</span>
+      <input id="annex-search" type="text" placeholder="🔍 Search schools…" value="${escapeHtml(state.annexSearch||'')}" oninput="onAnnexSearch(this.value)" autocomplete="off" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:7px 10px;color:var(--text);font-size:12px;outline:none;width:240px">
+      <span style="font-size:11px;color:var(--text3)">${annexCountText()}</span>
       ${ed&&hasValidDriveToken()?`<span style="font-size:11px;color:#3D9E6A;margin-left:auto">✓ Google account connected</span>`:''}
     </div>
-    ${!matches.length?`<div class="empty"><div class="empty-icon">📄</div><div class="empty-text">No matching schools</div></div>`:`
-    <div class="data-table"><table>
-      <thead><tr><th>School Name</th><th>Annex PDF</th><th>Uploaded</th><th>Actions</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table></div>`}
+    <div id="annex-list">${annexListHtml()}</div>
   </div>`;
 }
 
@@ -1568,7 +1589,7 @@ async function uploadAnnexPdf(i,file){
   const name=schoolsInfo[i]?.name||'school';
   try{
     toast(`Uploading ${name}'s PDF…`,'#4F8EF7');
-    const metadata={name:`${name} - Annex.pdf`,parents:[ANNEX_DRIVE_FOLDER_ID]};
+    const metadata={name:`${name} - Annex ${state.year}.pdf`,parents:[ANNEX_DRIVE_FOLDER_ID]};
     const boundary='yphs-'+Date.now();
     const fileBytes=new Uint8Array(await file.arrayBuffer());
     const encoder=new TextEncoder();
@@ -1606,12 +1627,13 @@ function removeAnnexPdf(i){
 }
 
 function renderSchoolsDirectory(){
-  const ed=state.isEditor;
-  while(schoolsInfo.length<30)schoolsInfo.push({});
-  let rows=schoolsInfo.map((s,i)=>{
+  const ed=state.isEditor,yr=state.year;
+  while(infoOfYear(yr).length<30)schoolsInfo.push({year:yr});
+  const yearIdx=[];schoolsInfo.forEach((x,k)=>{if(infoYear(x)===yr)yearIdx.push(k);});
+  let rows=yearIdx.map((i,n)=>{const s=schoolsInfo[i];
     const fields=(key,ph,w='60px',mono=true)=>`<input class="info-input" style="width:${w};${mono?"font-family:'JetBrains Mono',monospace;":''}" value="${s[key]||''}" placeholder="${ph}" ${ed?`onchange="updateInfo(${i},'${key}',this.value)"`:'readonly'}>`;
     return`<tr>
-      <td style="color:var(--text3);font-size:10px;font-family:'JetBrains Mono',monospace">${i+1}</td>
+      <td style="color:var(--text3);font-size:10px;font-family:'JetBrains Mono',monospace">${n+1}</td>
       <td>${fields('name','School name','180px',false)}</td>
       <td>${fields('address','Address','180px',false)}</td>
       <td>${fields('postal','000000','68px')}</td>
@@ -1624,7 +1646,7 @@ function renderSchoolsDirectory(){
     </tr>`;
   }).join('');
   return`<div style="margin-bottom:12px;display:flex;align-items:center;gap:10px">
-    <span style="font-size:12px;color:var(--text2)">${schoolsInfo.filter(s=>s.name).length} schools in database</span>
+    <span style="font-size:12px;color:var(--text2)">${infoOfYear(yr).filter(s=>s.name).length} schools in the ${yr} database</span>
     ${ed?`<button class="btn btn-primary btn-sm" onclick="addInfoRow()" style="margin-left:auto">+ Add Row</button>`:''}
   </div>
   <div class="data-table" style="overflow-x:auto"><table>
@@ -1633,7 +1655,7 @@ function renderSchoolsDirectory(){
     <tbody>${rows}</tbody>
   </table></div>`;
 }
-function addInfoRow(){if(!state.isEditor)return;schoolsInfo.push({});saveInfo();render();}
+function addInfoRow(){if(!state.isEditor)return;schoolsInfo.push({year:state.year});saveInfo();render();}
 function deleteInfoRow(i){
   if(!state.isEditor)return;
   const s=schoolsInfo[i];
@@ -1719,7 +1741,7 @@ function isSchoolConfirmed(name){
   return schools.some(s=>s.name===name&&s.year===state.year&&s.status==='Accepted');
 }
 function renderMap(){
-  const withCoords=schoolsInfo.filter(s=>s.name);
+  const withCoords=infoOfYear(state.year).filter(s=>s.name);
   return`<div style="display:flex;gap:12px;height:100%">
     <div style="width:260px;flex-shrink:0;display:flex;flex-direction:column;gap:8px">
       <input id="map-search" type="text" placeholder="🔍 Search schools…" oninput="filterMapSchools(this.value)" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:8px 10px;color:var(--text);font-size:12px;outline:none">
@@ -1738,7 +1760,7 @@ function renderMapSchoolList(filter){
   const q=(filter||'').trim().toLowerCase();
   const list=document.getElementById('map-school-list');
   if(!list)return;
-  const matches=schoolsInfo.filter(s=>s.name&&(!q||s.name.toLowerCase().includes(q)));
+  const matches=infoOfYear(state.year).filter(s=>s.name&&(!q||s.name.toLowerCase().includes(q)));
   if(!matches.length){list.innerHTML=`<div style="font-size:11px;color:var(--text3);padding:8px 4px">No matching schools</div>`;return;}
   list.innerHTML=matches.map(s=>{
     const confirmed=isSchoolConfirmed(s.name);
@@ -1752,7 +1774,7 @@ function renderMapSchoolList(filter){
 }
 function filterMapSchools(v){renderMapSchoolList(v);}
 function flyToSchool(name){
-  const s=schoolsInfo.find(x=>x.name===name);
+  const s=schoolsInfo.find(x=>x.name===name&&infoYear(x)===state.year);
   if(!s||!s.lat||!s.lng||!mapInstance)return;
   mapInstance.flyTo([s.lat,s.lng],16,{duration:0.6});
   const marker=mapMarkersByName[name];
@@ -1776,7 +1798,7 @@ function plotSchoolMarkers(){
   if(!mapInstance)return;
   mapMarkers.forEach(m=>mapInstance.removeLayer(m));
   mapMarkers=[];mapMarkersByName={};
-  const located=schoolsInfo.filter(s=>s.name&&s.lat&&s.lng);
+  const located=infoOfYear(state.year).filter(s=>s.name&&s.lat&&s.lng);
   located.forEach(s=>{
     const confirmed=isSchoolConfirmed(s.name);
     const marker=L.circleMarker([s.lat,s.lng],{
@@ -1793,7 +1815,7 @@ function plotSchoolMarkers(){
 }
 
 async function geocodeAllSchools(){
-  const todo=schoolsInfo.filter(s=>s.name&&(s.address||s.postal)&&!(s.lat&&s.lng));
+  const todo=infoOfYear(state.year).filter(s=>s.name&&(s.address||s.postal)&&!(s.lat&&s.lng));
   if(!todo.length){toast('Nothing to locate — schools either have no address or are already located','#4F8EF7');return;}
   toast(`Locating ${todo.length} school${todo.length>1?'s':''}…`,'#4F8EF7');
   let ok=0;
@@ -2085,7 +2107,7 @@ function clearLog(){if(!confirm('Clear all activity log?'))return;activityLog=[]
 function populateSchoolNameSuggestions(){
   const list=document.getElementById('school-names-list');
   if(!list)return;
-  const names=[...new Set(schoolsInfo.map(s=>s.name).filter(Boolean))].sort();
+  const names=[...new Set(infoOfYear(state.year).map(s=>s.name).filter(Boolean))].sort();
   list.innerHTML=names.map(n=>`<option value="${escapeHtml(n)}">`).join('');
 }
 function showAddSchool(team='',dateStr=''){
@@ -2399,7 +2421,7 @@ function bootApp(){
 
 // ── STARTUP: load from localStorage cache first (instant), then sync from Sheets ──
 schools=JSON.parse(localStorage.getItem('yphs_schools')||'[]');
-schoolsInfo=JSON.parse(localStorage.getItem('yphs_info')||'[]');
+schoolsInfo=normalizeInfoYears(JSON.parse(localStorage.getItem('yphs_info')||'[]'));
 activityLog=JSON.parse(localStorage.getItem('yphs_log')||'[]');
 updateNotifBadge();
 render(); // show cached data immediately
