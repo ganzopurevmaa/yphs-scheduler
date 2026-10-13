@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>YPHS Health Screening Scheduler</title>
-<!-- BUILD MARKER: v2026-09-11-fixes27 — if you can't find this exact string with
+<!-- BUILD MARKER: v2026-09-11-fixes29 — if you can't find this exact string with
      Ctrl/Cmd+F while viewing the page source, you are opening a stale/old copy
      of this file, not the latest one. -->
 <style>
@@ -14,7 +14,7 @@
   --text:#E8ECF4;--text2:#8B96B8;--text3:#5A6480;
   --accent:#4F8EF7;--accent2:#2D6AD4;
   --t1p:#E8736A;--t2p:#5CB85C;--t3p:#4A9FD4;--t4p:#E8A042;--t5p:#D46FA0;--t6p:#6AB86A;
-  --accepted:#3D9E6A;--pending-c:#C8A020;--pending-a:#C87020;--declined:#C84040;--sped:#8B6FD6;
+  --accepted:#3D9E6A;--pending-c:#C8A020;--pending-a:#C87020;--declined:#C84040;--sped:#8B6FD6;--to-proposal:#2BA6A0;--requested:#5C7CFA;
   --hol:#2A2A3A;--ph:#222230;
   --r:8px;--r2:12px;--shadow:0 2px 16px rgba(0,0,0,.5);
 }
@@ -214,6 +214,19 @@ body{background:var(--bg);color:var(--text);overflow:hidden;}
 .info-input{background:transparent;border:none;color:var(--text);font-family:'Inter',sans-serif;font-size:12px;width:100%;outline:none;padding:2px 4px;}
 .info-input:focus{background:rgba(79,142,247,.08);border-radius:3px;}
 .info-input:read-only{cursor:default;}
+/* PENDING SCHOOLS (holding area under the calendar) */
+.pending-panel{margin-top:14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:12px 14px;}
+.pending-panel.drag-over{border-color:var(--accent);background:rgba(79,142,247,.08);}
+.pending-head{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;}
+.pending-title{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text2);}
+.pending-hint{font-size:11px;color:var(--text3);}
+.pending-list{display:flex;flex-wrap:wrap;gap:8px;min-height:34px;}
+.pending-chip{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);border-left-width:4px;font-size:12px;user-select:none;}
+.pending-chip[draggable="true"]{cursor:grab;}
+.pending-chip .pc-name{font-weight:600;background:rgba(0,0,0,.4);padding:1px 6px;border-radius:4px;}
+.pending-chip .pc-days{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text2);}
+.pending-chip .pc-sub{font-size:10px;color:var(--text3);}
+.pending-chip .pc-status{font-size:10px;font-weight:600;}
 /* MAP VIEW */
 .map-wrap{height:100%;border-radius:var(--r2);overflow:hidden;border:1px solid var(--border);}
 .leaflet-popup-content-wrapper{background:var(--surface);color:var(--text);}
@@ -270,7 +283,7 @@ body{background:var(--bg);color:var(--text);overflow:hidden;}
       <button class="btn-icon" onclick="toggleTheme()" title="Toggle theme">🌙</button>
       <button class="btn-icon" onclick="exportPDF()" title="Export PDF" id="pdf-btn" style="display:none">🖨</button>
       <div class="lock-badge" id="lock-badge" onclick="showPinModal()">🔒 View only</div>
-      <div title="Build version — confirms you're on the latest file" style="font-size:9px;color:var(--text3);opacity:.5;padding:2px 6px;font-family:'JetBrains Mono',monospace">v2026-09-11-fixes27</div>
+      <div title="Build version — confirms you're on the latest file" style="font-size:9px;color:var(--text3);opacity:.5;padding:2px 6px;font-family:'JetBrains Mono',monospace">v2026-09-11-fixes29</div>
       <button class="btn btn-primary btn-sm" id="add-btn" onclick="showAddSchool()" style="display:none">+ Add School</button>
     </div>
   </div>
@@ -317,6 +330,24 @@ body{background:var(--bg);color:var(--text);overflow:hidden;}
 </div>
 
 <!-- SCHOOL MODAL -->
+<div class="modal-bg" id="pending-modal" style="display:none">
+<div class="modal">
+  <h3 id="pmod-title">Add Pending School</h3>
+  <p>Not scheduled yet — set how many school days it needs, then drag it onto a team row and date on the calendar.</p>
+  <div class="field-grid">
+    <div class="field field-full"><label>School Name</label><input id="pf-name" type="text" list="school-names-list" placeholder="e.g. Chua Chu Kang Primary School" autocomplete="off"></div>
+    <div class="field"><label>School days required</label><input id="pf-days" type="number" min="1" max="60" placeholder="e.g. 3"></div>
+    <div class="field"><label>Sub-team</label><select id="pf-sub"><option value="BOTH">BOTH</option><option value="HMG">HMG</option><option value="SCP">SCP</option></select></div>
+    <div class="field field-full"><label>Status</label><select id="pf-status"></select></div>
+    <div class="field field-full"><label>Notes / Remarks</label><textarea id="pf-notes" placeholder="e.g. Awaiting VP reply"></textarea></div>
+  </div>
+  <div class="modal-btns">
+    <button class="btn btn-ghost" id="delete-pending-btn" onclick="deletePending()" style="color:#E85050;margin-right:auto;display:none">🗑 Delete</button>
+    <button class="btn btn-ghost" onclick="closePendingModal()">Cancel</button>
+    <button class="btn btn-primary" onclick="savePending()">Save</button>
+  </div>
+</div>
+</div>
 <div class="modal-bg" id="school-modal" style="display:none">
 <div class="modal modal-lg">
   <h3 id="smod-title">Add School</h3>
@@ -329,7 +360,7 @@ body{background:var(--bg);color:var(--text);overflow:hidden;}
       <div style="font-size:10px;color:var(--text3);margin-top:3px">BOTH = one shared date range. Need different HMG and SCP dates? Add the school twice — once as HMG, once as SCP.</div>
     </div>
     <div class="field"><label>Status</label>
-      <select id="f-status"><option>Pending Confirmation</option><option>Pending Annex</option><option>Accepted</option><option>Declined</option><option>SPED School</option></select>
+      <select id="f-status"><option>Pending Confirmation</option><option>Pending Annex</option><option>Accepted</option><option>Declined</option><option>SPED School</option><option>To Proposal</option><option>Requested</option></select>
     </div>
     <div class="field"><label>Start Date</label><input id="f-pstart" type="date" onchange="calcDays()"></div>
     <div class="field"><label>End Date</label><input id="f-pend" type="date" onchange="calcDays()"></div>
@@ -355,6 +386,8 @@ body{background:var(--bg);color:var(--text);overflow:hidden;}
   <div class="ctx-item" onclick="ctxStatus('Pending Annex')"><span>📎</span> Pending Annex</div>
   <div class="ctx-item" onclick="ctxStatus('Declined')"><span>❌</span> Mark Declined</div>
   <div class="ctx-item" onclick="ctxStatus('SPED School')"><span>🟣</span> SPED School</div>
+  <div class="ctx-item" onclick="ctxStatus('To Proposal')"><span>📝</span> To Proposal</div>
+  <div class="ctx-item" onclick="ctxStatus('Requested')"><span>📨</span> Requested</div>
   <div class="ctx-sep"></div>
   <div class="ctx-item" onclick="ctxEdit()"><span>✏️</span> Edit Details</div>
   <div class="ctx-item" onclick="ctxDelete()" style="color:#E85050"><span>🗑</span> Delete</div>
@@ -370,7 +403,7 @@ let SITE_PASSWORD = localStorage.getItem('yphs_site_pw') || 'YPHS2026';
 let EDITOR_PIN    = localStorage.getItem('yphs_editor_pin') || '2027';
 // Keep PIN alias for backward compatibility with existing checkPin() calls
 const SHEET_ID='11MDEThuNiyEiZaKh6Yqt-CdwXG5K0V1IfBI4T9Mhli8';
-const BUILD_VERSION='v2026-09-11-fixes27';
+const BUILD_VERSION='v2026-09-11-fixes29';
 // If a newer version of this page has been deployed, this tab is running old code
 // against possibly-newer data. Saving from it could overwrite other people's work
 // (or drop columns added by the update), so it is blocked until the page is refreshed.
@@ -455,9 +488,11 @@ function getSub(s){return SUB_TEAMS.includes(s&&s.sub)?s.sub:'BOTH';}
 function teamLabel(s){return s&&s.team?`${s.team} ${getSub(s)}`:'—';}
 // Two entries only clash if they need the same sub-team at the same time.
 function subsClash(a,b){const x=getSub(a),y=getSub(b);return x==='BOTH'||y==='BOTH'||x===y;}
-const STATUSES=['Pending Confirmation','Pending Annex','Accepted','Declined','SPED School'];
+const STATUSES=['Pending Confirmation','Pending Annex','Accepted','Declined','SPED School','To Proposal','Requested'];
 // Kept in sync with the --accepted/--pending-c/--pending-a/--declined/--sped CSS vars in :root
-const STA_COLORS={'Accepted':'#3D9E6A','Pending Confirmation':'#C8A020','Pending Annex':'#C87020','Declined':'#C84040','SPED School':'#8B6FD6'};
+const STA_COLORS={'Accepted':'#3D9E6A','Pending Confirmation':'#C8A020','Pending Annex':'#C87020','Declined':'#C84040','SPED School':'#8B6FD6','To Proposal':'#2BA6A0','Requested':'#5C7CFA'};
+const STATUS_SHORT={'Pending Confirmation':'Pending','Pending Annex':'Pending','SPED School':'SPED','To Proposal':'Proposal'};
+function statusShort(st){return STATUS_SHORT[st]||st;}
 const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
 const TERMS={
   2026:[
@@ -666,12 +701,12 @@ async function gClear(range){
 }
 
 // Sheet columns: A=id B=year C=name D=team E=status F=start G=end
-//   H=(legacy actualStart, unused) I=(legacy actualEnd, unused) J=contact K=phone L=email M=notes N=sub (HMG/SCP/BOTH)
+//   H=(legacy actualStart, unused) I=(legacy actualEnd, unused) J=contact K=phone L=email M=notes N=sub (HMG/SCP/BOTH) O=daysRequired (school days needed, for pending schools)
 // Planned vs. Screening dates were merged into a single Start/End Date pair.
 function schoolToRow(s){
   return[s.id||'',s.year||'',s.name||'',s.team||'',s.status||'',
          s.plannedStart||'',s.plannedEnd||'','','',
-         s.contact||'',s.phone||'',s.email||'',s.notes||'',getSub(s)];
+         s.contact||'',s.phone||'',s.email||'',s.notes||'',getSub(s),s.daysRequired||''];
 }
 function rowToSchool(r){
   if(!r[0]&&!r[2])return null;
@@ -683,7 +718,8 @@ function rowToSchool(r){
          team:r[3]||'',status:r[4]||'Pending Confirmation',
          plannedStart:r[7]||r[5]||null,plannedEnd:r[8]||r[6]||null,
          contact:r[9]||'',phone:r[10]||'',email:r[11]||'',notes:r[12]||'',
-         sub:SUB_TEAMS.includes(r[13])?r[13]:'BOTH'};
+         sub:SUB_TEAMS.includes(r[13])?r[13]:'BOTH',
+         daysRequired:parseInt(r[14])||null};
 }
 function infoToRow(s){
   return[s.name||'',s.address||'',s.postal||'',s.contact||'',s.phone||'',s.email||'',
@@ -705,7 +741,7 @@ async function loadFromSheets(){
   try{
     // Load all 3 tabs in parallel
     const [sRes,iRes,lRes,boRes,holRes]=await Promise.all([
-      gFetch(`/values/${TAB_SCHOOLS}!A2:N`),
+      gFetch(`/values/${TAB_SCHOOLS}!A2:O`),
       gFetch(`/values/${TAB_INFO}!A2:X`),
       gFetch(`/values/${TAB_LOG}!A2:B`),
       gFetch(`/values/Blockouts!A2:D`).catch(()=>({values:[]})),
@@ -769,7 +805,7 @@ async function saveAllToSheets(){
   try{
     const writes=[];
     if(toWrite.has('schools')){
-      const sRows=[['id','year','name','team','status','start','end','','','contact','phone','email','notes','sub'],
+      const sRows=[['id','year','name','team','status','start','end','','','contact','phone','email','notes','sub','daysRequired'],
         ...schools.map(schoolToRow)];
       writes.push(writeTab(TAB_SCHOOLS, sRows));
     }
@@ -938,6 +974,7 @@ function onSearch(v){state.search=v.toLowerCase();render();}
 
 // ── RENDER ─────────────────────────────────────────────────────────────────
 function render(){
+  hideTooltip(); // a redraw removes the bar under the mouse, so its tooltip must not be left behind
   const titles={calendar:`Calendar — ${MONTHS[state.month]} ${state.year}`,details:`Details — ${state.year}`,dashboard:`Dashboard — ${state.year}`,notifications:'🔔 Alerts',whatsapp:'💬 WhatsApp Summary',schools:`Schools Info — ${state.year}`,map:`🗺️ School Locations — ${state.year}`,archive:`Archive — ${state.year}`,log:'Activity Log',settings:'⚙️ Settings — Holidays & Block-out Dates'};
   document.getElementById('topbar-title').textContent=titles[state.view]||'';
   updateProgress();
@@ -987,6 +1024,7 @@ function renderCalendar(){
     headerLabel=TERMS[yr][ti]?.name+' '+yr+' ('+d2s(TERMS[yr][ti]?.s)+' – '+d2s(TERMS[yr][ti]?.e)+')';
   }
   const nd=days.length;
+  calDays=days;
   // "school days" shown in the header should exclude PH/holidays/blockouts —
   // nd itself must stay the raw weekday count, since every weekday (including
   // holidays) still needs its own grey column in the grid below.
@@ -1140,10 +1178,11 @@ function renderCalendar(){
       ${TERMS[yr].map((t,i)=>`<option value="${i}" ${(state.termIdx||0)==i?'selected':''}>${t.name}</option>`).join('')}
     </select>`:''}
     <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">
-      ${Object.entries(STA_COLORS).map(([s,c])=>`<span style="display:flex;align-items:center;gap:3px;font-size:10px;color:var(--text2)"><span style="width:7px;height:7px;border-radius:50%;background:${c};display:inline-block"></span>${s.split(' ')[0]}</span>`).join('')}
+      ${Object.entries(STA_COLORS).map(([s,c])=>`<span style="display:flex;align-items:center;gap:3px;font-size:10px;color:var(--text2)"><span style="width:7px;height:7px;border-radius:50%;background:${c};display:inline-block"></span>${statusShort(s)}</span>`).join('')}
     </div>
   </div>
-  <div class="cal-grid-scroll"><div class="cal-grid" style="${calGridStyle}">${monthHead}${head}${rows}</div></div>`;
+  <div class="cal-grid-scroll"><div class="cal-grid" style="${calGridStyle}">${monthHead}${head}${rows}</div></div>
+  ${renderPendingPanel(yr)}`;
 }
 function setCalView(v){state.calView=v;if(v==='term')state.termIdx=0;render();}
 function setTermIdx(i){
@@ -1249,7 +1288,7 @@ function renderDetails(){
   else data.forEach((s,i)=>{
     const sc=getStatusColor(s.status),tc=getTeamColor(s.team);
     const ov=hasOverlap(s);
-    const pd=netDays(s.plannedStart,s.plannedEnd,yr);
+    const pd=netDays(s.plannedStart,s.plannedEnd,yr)||(isPendingSchool(s)&&s.daysRequired?`${s.daysRequired} req.`:'');
     const tl=s.plannedStart?termLabel(new Date(s.plannedStart),yr):'';
     rows+=`<tr>
       <td style="color:var(--text3);font-family:'JetBrains Mono',monospace;font-size:11px">${i+1}</td>
@@ -2126,6 +2165,7 @@ function showAddSchool(team='',dateStr=''){
 }
 function editSchool(id){
   const s=schools.find(x=>x.id===id);if(!s)return;
+  if(isPendingSchool(s)){editPending(id);return;} // pending schools have their own, simpler form
   state.editingId=id;
   document.getElementById('smod-title').textContent='Edit School';
   document.getElementById('delete-school-btn').style.display='';
@@ -2247,14 +2287,176 @@ function exportPDF(){
   win.document.close();setTimeout(()=>win.print(),500);
 }
 
+// ── PENDING SCHOOLS ────────────────────────────────────────────────────────
+// A school that is not on the calendar yet: it has a name and the number of school
+// days it needs (daysRequired) but no dates and no team. Drag it onto a team row and
+// date to schedule it — its end date is worked out from the days required.
+function isPendingSchool(s){return !s.plannedStart||!s.plannedEnd;}
+function pendingSchools(yr){return schools.filter(s=>s.year===yr&&s.name&&isPendingSchool(s));}
+
+function renderPendingPanel(yr){
+  const ed=state.isEditor;
+  const list=pendingSchools(yr).sort((a,b)=>a.name.localeCompare(b.name));
+  const chips=list.map(s=>{
+    const sc=getStatusColor(s.status),sub=getSub(s);
+    const drag=ed?` draggable="true" ondragstart="onSpanDragStart(event,'${s.id}','${sc}')" ondragend="onSpanDragEnd(event,'${s.id}')" onclick="editPending('${s.id}')"`:'';
+    return`<div class="pending-chip" id="span-${s.id}" style="border-left-color:${sc}"${drag} title="${escapeHtml((s.status||'')+(s.notes?' — '+s.notes:''))}">
+      <span class="pc-name" style="color:${SUB_COLORS[sub]}">${escapeHtml(s.name)}</span>
+      <span class="pc-days">${s.daysRequired?`${s.daysRequired} ${s.daysRequired===1?'day':'days'}`:'? days'}</span>
+      ${sub!=='BOTH'?`<span class="pc-sub">${sub}</span>`:''}
+      <span class="pc-status" style="color:${sc}">${escapeHtml(statusShort(s.status))}</span>
+    </div>`;
+  }).join('');
+  return`<div class="pending-panel" id="pending-panel" ondragover="onPendingDragOver(event)" ondragleave="onPendingDragLeave(event)" ondrop="onPendingDrop(event)">
+    <div class="pending-head">
+      <span class="pending-title">Pending schools · ${list.length}</span>
+      <span class="pending-hint">${ed?'Drag a school onto a team row and date to schedule it. Drag a scheduled school back here to unschedule it.':'Schools waiting to be scheduled.'}</span>
+      ${ed?`<button class="btn btn-primary btn-sm" onclick="showAddPending()" style="margin-left:auto">+ Add pending school</button>`:''}
+    </div>
+    <div class="pending-list">${chips||`<span class="pending-hint">No pending schools${ed?' — use "+ Add pending school".':'.'}</span>`}</div>
+  </div>`;
+}
+
+function fillPendingForm(v){
+  document.getElementById('pf-name').value=v.name||'';
+  document.getElementById('pf-days').value=v.days||'';
+  document.getElementById('pf-sub').value=v.sub||'BOTH';
+  const sel=document.getElementById('pf-status');
+  sel.innerHTML=STATUSES.map(x=>`<option>${x}</option>`).join('');
+  sel.value=v.status||'To Proposal';
+  document.getElementById('pf-notes').value=v.notes||'';
+}
+function showAddPending(){
+  if(!state.isEditor)return;
+  state.editingPendingId=null;
+  document.getElementById('pmod-title').textContent='Add Pending School';
+  document.getElementById('delete-pending-btn').style.display='none';
+  fillPendingForm({});
+  populateSchoolNameSuggestions();
+  document.getElementById('pending-modal').style.display='flex';
+  setTimeout(()=>document.getElementById('pf-name').focus(),50);
+}
+function editPending(id){
+  if(!state.isEditor)return;
+  const s=schools.find(x=>x.id===id);if(!s)return;
+  state.editingPendingId=id;
+  document.getElementById('pmod-title').textContent='Edit Pending School';
+  document.getElementById('delete-pending-btn').style.display='';
+  fillPendingForm({name:s.name,days:s.daysRequired,sub:getSub(s),status:s.status,notes:s.notes});
+  populateSchoolNameSuggestions();
+  document.getElementById('pending-modal').style.display='flex';
+}
+function closePendingModal(){document.getElementById('pending-modal').style.display='none';state.editingPendingId=null;}
+function savePending(){
+  if(!state.isEditor){toast('View only — unlock editor mode to make changes','#C87020');return;}
+  const name=document.getElementById('pf-name').value.trim();
+  if(!name){toast('Please enter a school name');return;}
+  const days=parseInt(document.getElementById('pf-days').value);
+  if(!days||days<1||days>60){toast('Enter how many school days are needed (1–60)');return;}
+  const sub=document.getElementById('pf-sub').value,status=document.getElementById('pf-status').value,notes=document.getElementById('pf-notes').value;
+  if(state.editingPendingId){
+    const s=schools.find(x=>x.id===state.editingPendingId);
+    if(!s){closePendingModal();return;}
+    s.name=name;s.daysRequired=days;s.sub=sub;s.status=status;s.notes=notes;
+    addLog(`Edited pending school <strong>${escapeHtml(name)}</strong> (${days} days, ${escapeHtml(status)})`);
+    toast('Pending school updated ✓','#3D9E6A');
+  }else{
+    schools.push({id:Date.now().toString(),year:state.year,name,team:'',sub,status,plannedStart:null,plannedEnd:null,daysRequired:days,contact:'',phone:'',email:'',notes});
+    addLog(`Added pending school <strong>${escapeHtml(name)}</strong> — ${days} days required`);
+    toast('Pending school added ✓','#3D9E6A');
+  }
+  save();closePendingModal();render();
+}
+function deletePending(){
+  if(!state.isEditor){toast('View only — unlock editor mode to make changes','#C87020');return;}
+  const s=schools.find(x=>x.id===state.editingPendingId);
+  if(!s||!confirm(`Delete "${s.name}"? This cannot be undone.`))return;
+  schools=schools.filter(x=>x.id!==s.id);save();
+  addLog(`Deleted pending school <strong>${escapeHtml(s.name)}</strong>`);
+  toast('Pending school deleted');closePendingModal();render();
+}
+
+// Dragging a SCHEDULED school back onto the pending panel unschedules it
+function onPendingDragOver(e){
+  if(!dragId||!state.isEditor)return;
+  const s=schools.find(x=>x.id===dragId);
+  if(!s||isPendingSchool(s))return;
+  e.preventDefault();e.dataTransfer.dropEffect='move';
+  document.getElementById('pending-panel')?.classList.add('drag-over');
+}
+function onPendingDragLeave(e){
+  const p=document.getElementById('pending-panel');if(!p)return;
+  const r=p.getBoundingClientRect();
+  if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)p.classList.remove('drag-over');
+}
+function onPendingDrop(e){
+  if(!state.isEditor)return;
+  e.preventDefault();
+  document.getElementById('pending-panel')?.classList.remove('drag-over');
+  const id=e.dataTransfer.getData('text/plain')||dragId;
+  const s=schools.find(x=>x.id===id);
+  if(!s||isPendingSchool(s)){dragId=null;return;}
+  if(!confirm(`Move "${s.name}" back to Pending? Its team and dates will be cleared.`)){dragId=null;return;}
+  const yr=s.year||state.year;
+  const oldTeam=s.team,oldStart=s.plannedStart,oldEnd=s.plannedEnd;
+  s.daysRequired=netDays(oldStart,oldEnd,yr)||s.daysRequired||1;
+  s.team='';s.plannedStart=null;s.plannedEnd=null;
+  save();
+  addLog(`Moved <strong>${escapeHtml(s.name)}</strong> back to Pending (was ${escapeHtml(oldTeam||'—')}, ${d2s(oldStart)} – ${d2s(oldEnd)})`);
+  toast(`${s.name} moved back to Pending`,'#3D9E6A');
+  dragId=null;render();
+}
+
 // ── DRAG & DROP ────────────────────────────────────────────────────────────
-let dragId=null,dragGhost=null;
+let dragId=null,dragGhost=null,dragGrabIdx=0,calDays=[];
+
+// Which day column (0-based) is under a horizontal pixel position in a calendar row.
+function colIndexFromX(rowEl,x){
+  const cells=rowEl?rowEl.querySelectorAll('.cal-cell'):[];
+  if(!cells.length)return 0;
+  const first=cells[0].getBoundingClientRect();
+  return Math.max(0,Math.min(cells.length-1,Math.floor((x-first.left)/(first.width||1))));
+}
+function isSchoolDayOn(d,yr){return isWeekday(d)&&!isPH(d,yr)&&!isHoliday(d,yr)&&!isBlockout(d,yr);}
+// Move a date forward/back by whole weekdays (the calendar's columns are weekdays only).
+function addWeekdays(d,k){
+  const x=new Date(d);x.setHours(0,0,0,0);
+  const step=k>=0?1:-1;let left=Math.abs(k);
+  while(left>0){x.setDate(x.getDate()+step);if(isWeekday(x))left--;}
+  return x;
+}
+// Last day of a booking that needs `n` school days starting at `start`
+// (weekends, PH, school holidays and block-outs don't count towards the n days).
+function endAfterSchoolDays(start,n,yr){
+  const x=new Date(start);x.setHours(0,0,0,0);
+  let count=isSchoolDayOn(x,yr)?1:0;
+  while(count<n){x.setDate(x.getDate()+1);if(isSchoolDayOn(x,yr))count++;}
+  return x;
+}
+// Work out a school's new dates if it is moved `shift` day-columns, keeping the same
+// number of school days. (If it had none — e.g. it sat entirely on holidays — keep its width.)
+function shiftedRange(s,shift,yr){
+  const newStart=addWeekdays(s.plannedStart,shift);
+  const n=netDays(s.plannedStart,s.plannedEnd,yr)||0;
+  let newEnd;
+  if(n>0)newEnd=endAfterSchoolDays(newStart,n,yr);
+  else{
+    let cols=0;const c=new Date(s.plannedStart),e=new Date(s.plannedEnd);
+    while(c<=e){if(isWeekday(c))cols++;c.setDate(c.getDate()+1);}
+    newEnd=addWeekdays(newStart,Math.max(cols,1)-1);
+  }
+  return{start:ymd(newStart),end:ymd(newEnd)};
+}
 
 function onSpanDragStart(e,id,color){
   if(!state.isEditor){e.preventDefault();return;}
+  hideTooltip();
   dragId=id;
   const s=schools.find(x=>x.id===id);
   if(!s)return;
+  // remember which day column was grabbed, so the drop can work out how far it moved
+  const grabbedEl=document.getElementById('span-'+id);
+  dragGrabIdx=colIndexFromX(grabbedEl?grabbedEl.closest('.cal-row'):null,e.clientX);
 
   // Create custom ghost element
   dragGhost=document.createElement('div');
@@ -2280,7 +2482,7 @@ function onSpanDragEnd(e,id){
   const el=document.getElementById('span-'+id);
   if(el)el.classList.remove('dragging');
   // Clear all drag-over highlights
-  document.querySelectorAll('.cal-row.drag-over').forEach(r=>r.classList.remove('drag-over'));
+  document.querySelectorAll('.cal-row.drag-over,.pending-panel.drag-over').forEach(r=>r.classList.remove('drag-over'));
   dragId=null;
 }
 
@@ -2313,20 +2515,43 @@ function onRowDrop(e,targetTeam){
   if(!state.isEditor)return;
   e.preventDefault();
   const id=e.dataTransfer.getData('text/plain')||dragId;
-  if(!id)return;
+  const clearHighlights=()=>document.querySelectorAll('.cal-row.drag-over').forEach(r=>r.classList.remove('drag-over'));
+  if(!id){clearHighlights();return;}
   const s=schools.find(x=>x.id===id);
-  if(!s||s.team===targetTeam){
-    document.querySelectorAll('.cal-row.drag-over').forEach(r=>r.classList.remove('drag-over'));
-    return;
+  if(!s){clearHighlights();return;}
+  const yr=s.year||state.year;
+  const row=document.getElementById('team-row-'+targetTeam);
+  if(isPendingSchool(s)){
+    // place it on the day column it was dropped on (moved forward to the next school day
+    // if that column is a weekend-adjacent holiday), running for the days required
+    const col=colIndexFromX(row,e.clientX);
+    if(!calDays[col]){clearHighlights();dragId=null;return;}
+    const start=new Date(calDays[col]);start.setHours(0,0,0,0);
+    for(let g=0;g<30&&!isSchoolDayOn(start,yr);g++)start.setDate(start.getDate()+1);
+    const need=s.daysRequired||1;
+    const end=endAfterSchoolDays(start,need,yr);
+    s.team=targetTeam;s.plannedStart=ymd(start);s.plannedEnd=ymd(end);
+    clearHighlights();save();
+    addLog(`Scheduled <strong>${escapeHtml(s.name)}</strong> on ${escapeHtml(teamLabel(s))}: ${d2s(s.plannedStart)} – ${d2s(s.plannedEnd)} (${need} days)`);
+    toast(`${s.name} scheduled on ${targetTeam}, ${d2s(s.plannedStart)} ✓`,'#3D9E6A');
+    dragId=null;render();return;
   }
-  const oldTeam=s.team;
-  s.team=targetTeam;
-  // Update org automatically
-  s.org=['T1P','T2P','T3P'].includes(targetTeam)?'NUHS':'SHS';
+  // how many day-columns sideways was it dropped from where it was picked up?
+  const shift=row?colIndexFromX(row,e.clientX)-dragGrabIdx:0;
+  const oldTeam=s.team,oldStart=s.plannedStart,oldEnd=s.plannedEnd;
+  const teamChanged=oldTeam!==targetTeam;
+  let moved=null;
+  if(shift!==0&&oldStart&&oldEnd)moved=shiftedRange(s,shift,yr);
+  clearHighlights();
+  if(!teamChanged&&!moved){dragId=null;return;}
+  if(teamChanged)s.team=targetTeam;
+  if(moved){s.plannedStart=moved.start;s.plannedEnd=moved.end;}
   save();
-  addLog(`Moved <strong>${escapeHtml(s.name)}</strong> from ${escapeHtml(oldTeam)} → ${escapeHtml(targetTeam)}`);
-  toast(`${s.name} moved to ${targetTeam} ✓`,'#3D9E6A');
-  document.querySelectorAll('.cal-row.drag-over').forEach(r=>r.classList.remove('drag-over'));
+  const parts=[];
+  if(teamChanged)parts.push(`${escapeHtml(oldTeam||'—')} → ${escapeHtml(targetTeam)}`);
+  if(moved)parts.push(`${d2s(oldStart)} – ${d2s(oldEnd)} → ${d2s(moved.start)} – ${d2s(moved.end)}`);
+  addLog(`Moved <strong>${escapeHtml(s.name)}</strong>: ${parts.join(' · ')}`);
+  toast(`${s.name} moved${moved?` to ${d2s(moved.start)}`:''}${teamChanged?` (${targetTeam})`:''} ✓`,'#3D9E6A');
   dragId=null;
   render();
 }
