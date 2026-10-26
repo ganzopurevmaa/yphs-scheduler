@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>YPHS Health Screening Scheduler</title>
-<!-- BUILD MARKER: v2026-09-11-fixes29 — if you can't find this exact string with
+<!-- BUILD MARKER: v2026-09-11-fixes31 — if you can't find this exact string with
      Ctrl/Cmd+F while viewing the page source, you are opening a stale/old copy
      of this file, not the latest one. -->
 <style>
@@ -227,6 +227,24 @@ body{background:var(--bg);color:var(--text);overflow:hidden;}
 .pending-chip .pc-days{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text2);}
 .pending-chip .pc-sub{font-size:10px;color:var(--text3);}
 .pending-chip .pc-status{font-size:10px;font-weight:600;}
+/* HOLIDAY / BLOCK-OUT NAMES */
+.hol-run-wrap{position:absolute;top:0;bottom:0;right:0;pointer-events:none;z-index:1;}
+.hol-run{position:absolute;top:0;bottom:0;display:flex;align-items:flex-start;justify-content:center;padding:20px 2px 0;box-sizing:border-box;overflow:hidden;}
+.hol-run span{font-size:8px;line-height:1.15;color:var(--text3);text-align:center;word-break:break-word;max-width:100%;}
+.hol-run.ph span{color:var(--text2);font-weight:600;}
+.hol-run.bo span{color:var(--text2);font-style:italic;}
+/* DRAG PREVIEW + DUPLICATE FLAGS + NOTES */
+.cal-cell.drop-preview{background:rgba(79,142,247,.32)!important;box-shadow:inset 0 0 0 1px var(--accent);}
+.drag-ghost{white-space:nowrap;}
+.dup-badge{display:inline-block;background:#C84040;color:#fff;font-size:9px;font-weight:700;letter-spacing:.04em;padding:1px 7px;border-radius:9px;margin-left:8px;text-transform:uppercase;vertical-align:middle;cursor:help;}
+tr.dup-row>td{background:rgba(200,64,64,.10)!important;}
+tr.dup-row>td:first-child{box-shadow:inset 3px 0 0 #C84040;}
+.school-span.is-dup{outline:2px dashed #FF6B6B;outline-offset:-2px;}
+.dup-corner{position:absolute;bottom:2px;right:4px;background:#C84040;color:#fff;font-size:8px;font-weight:700;padding:0 5px;border-radius:8px;cursor:help;}
+.pending-chip.is-dup{border-color:#C84040;}
+.dup-warn{margin-top:4px;font-size:11px;color:#FF8A8A;font-weight:600;}
+.notes-cell{width:240px;max-width:240px;min-width:140px;font-size:11px;color:var(--text2);}
+.notes-clamp{display:-webkit-box;-webkit-line-clamp:3;line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap;word-break:break-word;}
 /* MAP VIEW */
 .map-wrap{height:100%;border-radius:var(--r2);overflow:hidden;border:1px solid var(--border);}
 .leaflet-popup-content-wrapper{background:var(--surface);color:var(--text);}
@@ -283,7 +301,7 @@ body{background:var(--bg);color:var(--text);overflow:hidden;}
       <button class="btn-icon" onclick="toggleTheme()" title="Toggle theme">🌙</button>
       <button class="btn-icon" onclick="exportPDF()" title="Export PDF" id="pdf-btn" style="display:none">🖨</button>
       <div class="lock-badge" id="lock-badge" onclick="showPinModal()">🔒 View only</div>
-      <div title="Build version — confirms you're on the latest file" style="font-size:9px;color:var(--text3);opacity:.5;padding:2px 6px;font-family:'JetBrains Mono',monospace">v2026-09-11-fixes29</div>
+      <div title="Build version — confirms you're on the latest file" style="font-size:9px;color:var(--text3);opacity:.5;padding:2px 6px;font-family:'JetBrains Mono',monospace">v2026-09-11-fixes31</div>
       <button class="btn btn-primary btn-sm" id="add-btn" onclick="showAddSchool()" style="display:none">+ Add School</button>
     </div>
   </div>
@@ -335,9 +353,9 @@ body{background:var(--bg);color:var(--text);overflow:hidden;}
   <h3 id="pmod-title">Add Pending School</h3>
   <p>Not scheduled yet — set how many school days it needs, then drag it onto a team row and date on the calendar.</p>
   <div class="field-grid">
-    <div class="field field-full"><label>School Name</label><input id="pf-name" type="text" list="school-names-list" placeholder="e.g. Chua Chu Kang Primary School" autocomplete="off"></div>
+    <div class="field field-full"><label>School Name</label><input id="pf-name" type="text" list="school-names-list" placeholder="e.g. Chua Chu Kang Primary School" autocomplete="off" oninput="updatePendingDupWarning()"><div id="pf-dup-warn" class="dup-warn" style="display:none"></div></div>
     <div class="field"><label>School days required</label><input id="pf-days" type="number" min="1" max="60" placeholder="e.g. 3"></div>
-    <div class="field"><label>Sub-team</label><select id="pf-sub"><option value="BOTH">BOTH</option><option value="HMG">HMG</option><option value="SCP">SCP</option></select></div>
+    <div class="field"><label>Sub-team</label><select id="pf-sub" onchange="updatePendingDupWarning()"><option value="BOTH">BOTH</option><option value="HMG">HMG</option><option value="SCP">SCP</option></select></div>
     <div class="field field-full"><label>Status</label><select id="pf-status"></select></div>
     <div class="field field-full"><label>Notes / Remarks</label><textarea id="pf-notes" placeholder="e.g. Awaiting VP reply"></textarea></div>
   </div>
@@ -353,10 +371,10 @@ body{background:var(--bg);color:var(--text);overflow:hidden;}
   <h3 id="smod-title">Add School</h3>
   <p>Fill in screening details. School appears on the calendar automatically.</p>
   <div class="field-grid">
-    <div class="field field-full"><label>School Name</label><input id="f-name" type="text" list="school-names-list" placeholder="e.g. Chua Chu Kang Primary School" autocomplete="off"></div>
+    <div class="field field-full"><label>School Name</label><input id="f-name" type="text" list="school-names-list" placeholder="e.g. Chua Chu Kang Primary School" autocomplete="off" oninput="updateSchoolDupWarning()"><div id="f-dup-warn" class="dup-warn" style="display:none"></div></div>
     <datalist id="school-names-list"></datalist>
     <div class="field"><label>Team</label>
-      <select id="f-team"><option value="">— select —</option><optgroup label="T1P"><option value="T1P|HMG">T1P HMG</option><option value="T1P|SCP">T1P SCP</option><option value="T1P|BOTH">T1P BOTH</option></optgroup><optgroup label="T2P"><option value="T2P|HMG">T2P HMG</option><option value="T2P|SCP">T2P SCP</option><option value="T2P|BOTH">T2P BOTH</option></optgroup><optgroup label="T3P"><option value="T3P|HMG">T3P HMG</option><option value="T3P|SCP">T3P SCP</option><option value="T3P|BOTH">T3P BOTH</option></optgroup><optgroup label="T4P"><option value="T4P|HMG">T4P HMG</option><option value="T4P|SCP">T4P SCP</option><option value="T4P|BOTH">T4P BOTH</option></optgroup><optgroup label="T5P"><option value="T5P|HMG">T5P HMG</option><option value="T5P|SCP">T5P SCP</option><option value="T5P|BOTH">T5P BOTH</option></optgroup><optgroup label="T6P"><option value="T6P|HMG">T6P HMG</option><option value="T6P|SCP">T6P SCP</option><option value="T6P|BOTH">T6P BOTH</option></optgroup></select>
+      <select id="f-team" onchange="updateSchoolDupWarning()"><option value="">— select —</option><optgroup label="T1P"><option value="T1P|HMG">T1P HMG</option><option value="T1P|SCP">T1P SCP</option><option value="T1P|BOTH">T1P BOTH</option></optgroup><optgroup label="T2P"><option value="T2P|HMG">T2P HMG</option><option value="T2P|SCP">T2P SCP</option><option value="T2P|BOTH">T2P BOTH</option></optgroup><optgroup label="T3P"><option value="T3P|HMG">T3P HMG</option><option value="T3P|SCP">T3P SCP</option><option value="T3P|BOTH">T3P BOTH</option></optgroup><optgroup label="T4P"><option value="T4P|HMG">T4P HMG</option><option value="T4P|SCP">T4P SCP</option><option value="T4P|BOTH">T4P BOTH</option></optgroup><optgroup label="T5P"><option value="T5P|HMG">T5P HMG</option><option value="T5P|SCP">T5P SCP</option><option value="T5P|BOTH">T5P BOTH</option></optgroup><optgroup label="T6P"><option value="T6P|HMG">T6P HMG</option><option value="T6P|SCP">T6P SCP</option><option value="T6P|BOTH">T6P BOTH</option></optgroup></select>
       <div style="font-size:10px;color:var(--text3);margin-top:3px">BOTH = one shared date range. Need different HMG and SCP dates? Add the school twice — once as HMG, once as SCP.</div>
     </div>
     <div class="field"><label>Status</label>
@@ -403,7 +421,7 @@ let SITE_PASSWORD = localStorage.getItem('yphs_site_pw') || 'YPHS2026';
 let EDITOR_PIN    = localStorage.getItem('yphs_editor_pin') || '2027';
 // Keep PIN alias for backward compatibility with existing checkPin() calls
 const SHEET_ID='11MDEThuNiyEiZaKh6Yqt-CdwXG5K0V1IfBI4T9Mhli8';
-const BUILD_VERSION='v2026-09-11-fixes29';
+const BUILD_VERSION='v2026-09-11-fixes31';
 // If a newer version of this page has been deployed, this tab is running old code
 // against possibly-newer data. Saving from it could overwrite other people's work
 // (or drop columns added by the update), so it is blocked until the page is refreshed.
@@ -487,6 +505,71 @@ const SUB_COLORS={HMG:'#7DD3FC',SCP:'#F9A8D4',BOTH:'#FFFFFF'}; // school-name co
 function getSub(s){return SUB_TEAMS.includes(s&&s.sub)?s.sub:'BOTH';}
 function teamLabel(s){return s&&s.team?`${s.team} ${getSub(s)}`:'—';}
 // Two entries only clash if they need the same sub-team at the same time.
+// ── Duplicate detection ──────────────────────────────────────────────────────
+// A school counts as duplicated when the same name (ignoring capitals, spacing and punctuation)
+// is entered twice in the same year AND both entries need the same sub-team. An HMG entry plus
+// an SCP entry for the same school is the normal HMG/SCP split, so it is NOT flagged.
+// In Schools Info, any repeated name within a year is flagged.
+function normName(n){return String(n||'').toLowerCase().replace(/&/g,' and ').replace(/[^a-z0-9]+/g,' ').trim();}
+let dupCache=null;
+function dupData(yr){
+  if(dupCache&&dupCache.yr===yr)return dupCache;
+  const groups={};
+  schools.forEach(s=>{if(s.year===yr&&s.name)(groups[normName(s.name)]=groups[normName(s.name)]||[]).push(s);});
+  const sched=new Map();
+  Object.values(groups).forEach(g=>{
+    for(let i=0;i<g.length;i++)for(let j=i+1;j<g.length;j++){
+      if(subsClash(g[i],g[j])){
+        if(!sched.has(g[i].id))sched.set(g[i].id,[]);
+        if(!sched.has(g[j].id))sched.set(g[j].id,[]);
+        sched.get(g[i].id).push(g[j]);sched.get(g[j].id).push(g[i]);
+      }
+    }
+  });
+  const schedGroups=Object.values(groups).map(g=>g.filter(e=>sched.has(e.id))).filter(g=>g.length>1);
+  const ig={};
+  schoolsInfo.forEach((x,i)=>{if(infoYear(x)===yr&&x.name)(ig[normName(x.name)]=ig[normName(x.name)]||[]).push(i);});
+  const infoGroups=Object.values(ig).filter(a=>a.length>1);
+  const info=new Set();infoGroups.forEach(a=>a.forEach(i=>info.add(i)));
+  dupCache={yr,sched,schedGroups,info,infoGroups};
+  return dupCache;
+}
+function entryDesc(o){
+  return isPendingSchool(o)?`Pending (${o.daysRequired||'?'} days${getSub(o)!=='BOTH'?', '+getSub(o):''})`:`${teamLabel(o)}, ${d2s(o.plannedStart)} – ${d2s(o.plannedEnd)}`;
+}
+function isSchedDup(s){return dupData(s.year||state.year).sched.has(s.id);}
+function schedDupTitle(s){const o=dupData(s.year||state.year).sched.get(s.id);return o&&o.length?`Duplicate — also entered as: ${o.map(entryDesc).join('; ')}`:'';}
+function dupBadge(title){return`<span class="dup-badge" title="${escapeHtml(title)}">⚠ Duplicate</span>`;}
+function infoDupTitle(i){return`The same school name is entered more than once in the ${infoYear(schoolsInfo[i])} Schools Info`;}
+function isInfoDup(i){return !!schoolsInfo[i]&&dupData(infoYear(schoolsInfo[i])).info.has(i);}
+// Flags in the Schools Info grid are refreshed in place, so tabbing between fields isn't interrupted
+function refreshInfoDupFlags(){
+  dupCache=null;
+  document.querySelectorAll('tr[data-info-i]').forEach(tr=>{
+    const i=+tr.dataset.infoI,dup=isInfoDup(i);
+    tr.classList.toggle('dup-row',dup);
+    const slot=tr.querySelector('.info-dup-slot');
+    if(slot)slot.innerHTML=dup?dupBadge(infoDupTitle(i)):'';
+  });
+}
+// Live warning while entering a school, before the duplicate is created
+function findScheduleClashes(name,sub,excludeId){
+  const k=normName(name);if(!k)return[];
+  return schools.filter(o=>o.year===state.year&&o.id!==excludeId&&normName(o.name)===k&&subsClash({sub},o));
+}
+function updateSchoolDupWarning(){
+  const el=document.getElementById('f-dup-warn');if(!el)return;
+  const [team,sub]=(document.getElementById('f-team').value||'').split('|');
+  const hits=team?findScheduleClashes(document.getElementById('f-name').value,sub||'BOTH',state.editingId):[];
+  el.style.display=hits.length?'':'none';
+  el.textContent=hits.length?`⚠ Already entered for ${state.year}: ${hits.map(entryDesc).join('; ')}`:'';
+}
+function updatePendingDupWarning(){
+  const el=document.getElementById('pf-dup-warn');if(!el)return;
+  const hits=findScheduleClashes(document.getElementById('pf-name').value,document.getElementById('pf-sub').value,state.editingPendingId);
+  el.style.display=hits.length?'':'none';
+  el.textContent=hits.length?`⚠ Already entered for ${state.year}: ${hits.map(entryDesc).join('; ')}`:'';
+}
 function subsClash(a,b){const x=getSub(a),y=getSub(b);return x==='BOTH'||y==='BOTH'||x===y;}
 const STATUSES=['Pending Confirmation','Pending Annex','Accepted','Declined','SPED School','To Proposal','Requested'];
 // Kept in sync with the --accepted/--pending-c/--pending-a/--declined/--sped CSS vars in :root
@@ -555,6 +638,20 @@ const PH={
   ],
 };
 
+// Names for the dates in PH above, keyed by date. 2026 is checked against the MOE/MOM calendars
+// (6 Jul, 4 Sep and 2 Oct are MOE-scheduled school holidays: Youth Day, Teachers' Day, Children's Day).
+const PH_NAMES={
+  '2026-01-01':"New Year's Day",'2026-02-17':'Chinese New Year','2026-02-18':'Chinese New Year','2026-03-23':'Hari Raya Puasa',
+  '2026-04-03':'Good Friday','2026-05-01':'Labour Day','2026-05-27':'Hari Raya Haji','2026-06-01':'Vesak Day',
+  '2026-07-06':'Youth Day','2026-08-10':'National Day','2026-09-04':"Teachers' Day",'2026-10-02':"Children's Day",
+  '2026-11-09':'Deepavali','2026-12-25':'Christmas Day',
+  '2027-01-01':"New Year's Day",'2027-02-08':'Chinese New Year','2027-02-09':'Chinese New Year','2027-03-10':'Hari Raya Puasa',
+  '2027-03-26':'Good Friday','2027-05-17':'Hari Raya Haji','2027-05-20':'Vesak Day','2027-08-09':'National Day','2027-10-28':'Deepavali',
+  '2028-01-01':"New Year's Day",'2028-02-26':'Chinese New Year','2028-02-27':'Chinese New Year','2028-03-29':'Hari Raya Puasa',
+  '2028-04-14':'Good Friday','2028-05-01':'Labour Day','2028-06-05':'Hari Raya Haji','2028-06-19':'Vesak Day',
+  '2028-08-09':'National Day','2028-11-17':'Deepavali','2028-12-25':'Christmas Day'
+};
+
 // ── STATE ──────────────────────────────────────────────────────────────────
 let state={view:'calendar',year:2026,month:new Date().getMonth(),calView:'month',
            isEditor:false,editingId:null,search:'',ctxId:null,
@@ -584,6 +681,23 @@ function isHoliday(d,yr){
   if(hols.some(h=>dt>=dateOnly(h.s)&&dt<=dateOnly(h.e)))return true;
   // Also check single block-out dates
   return blockouts.filter(b=>b.year===yr).some(b=>dateOnly(b.date).getTime()===dt.getTime());
+}
+// What should a grey (non-school) day be called on the calendar?
+// Public/MOE holiday name first, then your own block-out label, then a custom holiday's name,
+// then the built-in school-holiday period (e.g. "June/July School Holiday").
+function phName(d){return PH_NAMES[ymd(d)]||'Public Holiday';}
+function holidayName(d,yr){
+  const dt=dateOnly(d);
+  const c=(customHols[yr]||[]).find(h=>h.name&&h.s&&h.e&&dt>=dateOnly(h.s)&&dt<=dateOnly(h.e));
+  return c?c.name:getHolName(d,yr);
+}
+function dayLabel(d,yr){
+  if(isPH(d,yr))return{kind:'ph',name:phName(d)};
+  const dt=dateOnly(d);
+  const b=blockouts.find(x=>x.year===yr&&x.date&&dateOnly(x.date).getTime()===dt.getTime());
+  if(b)return{kind:'bo',name:b.label||'Blocked out'};
+  if(isHoliday(d,yr))return{kind:'hol',name:holidayName(d,yr)};
+  return null;
 }
 function isBlockout(d,yr){
   const dt=dateOnly(d);
@@ -910,9 +1024,11 @@ function toast(msg,color=''){
   document.body.appendChild(t);setTimeout(()=>t.remove(),2500);
 }
 function updateNotifBadge(){
-  const alerts=getPendingAlerts();
+  dupCache=null;
+  const dd=dupData(state.year);
+  const count=getPendingAlerts().length+dd.schedGroups.length+dd.infoGroups.length;
   const badge=document.getElementById('notif-count');
-  if(alerts.length>0){badge.style.display='';badge.textContent=alerts.length;}
+  if(count>0){badge.style.display='';badge.textContent=count;}
   else badge.style.display='none';
 }
 function getPendingAlerts(){
@@ -974,6 +1090,7 @@ function onSearch(v){state.search=v.toLowerCase();render();}
 
 // ── RENDER ─────────────────────────────────────────────────────────────────
 function render(){
+  dupCache=null;
   hideTooltip(); // a redraw removes the bar under the mouse, so its tooltip must not be left behind
   const titles={calendar:`Calendar — ${MONTHS[state.month]} ${state.year}`,details:`Details — ${state.year}`,dashboard:`Dashboard — ${state.year}`,notifications:'🔔 Alerts',whatsapp:'💬 WhatsApp Summary',schools:`Schools Info — ${state.year}`,map:`🗺️ School Locations — ${state.year}`,archive:`Archive — ${state.year}`,log:'Activity Log',settings:'⚙️ Settings — Holidays & Block-out Dates'};
   document.getElementById('topbar-title').textContent=titles[state.view]||'';
@@ -1042,6 +1159,18 @@ function renderCalendar(){
   const activeHols=getSchoolHols(yr);
 
   // Date header
+  // Grey days: one label per stretch of consecutive days with the same name (so a long break is
+  // labelled once across its width instead of repeating in every narrow column)
+  const dayLabels=days.map(d=>dayLabel(d,yr));
+  let holRunsHtml='';
+  for(let i=0;i<nd;){
+    const l=dayLabels[i];
+    if(!l){i++;continue;}
+    let j=i+1;
+    while(j<nd&&dayLabels[j]&&dayLabels[j].name===l.name&&dayLabels[j].kind===l.kind)j++;
+    holRunsHtml+=`<div class="hol-run ${l.kind}" style="left:${i/nd*100}%;width:${(j-i)/nd*100}%"><span>${escapeHtml(l.name)}</span></div>`;
+    i=j;
+  }
   let monthHead='';
   if(state.calView==='term'){
     // Group consecutive days by month so each month gets one spanning label
@@ -1059,11 +1188,11 @@ function renderCalendar(){
     </div>`;
   }
   let head=`<div class="cal-grid-head" style="grid-template-columns:${colW}"><div class="hcell">Team</div>`;
-  days.forEach(day=>{
+  days.forEach((day,di)=>{
     const ph=isPH(day,yr),hol=isHoliday(day,yr),today=isToday(day);
     const dn=['Su','Mo','Tu','We','Th','Fr','Sa'][day.getDay()];
     const bg=hol?'background:var(--hol)':ph?'background:var(--ph)':today?'background:rgba(79,142,247,.12)':'';
-    head+=`<div class="hcell" style="${bg}${today?';color:var(--accent)':''}">
+    head+=`<div class="hcell" title="${dayLabels[di]?escapeHtml(dayLabels[di].name):''}" style="${bg}${today?';color:var(--accent)':''}">
       ${today?`<div style="width:5px;height:5px;border-radius:50%;background:var(--accent);margin:0 auto 2px"></div>`:''}
       <div style="font-size:9px">${dn}</div>
       <div style="font-size:12px;font-weight:700;color:${today?'var(--accent)':'var(--text)'}">${day.getDate()}</div>
@@ -1099,13 +1228,12 @@ function renderCalendar(){
       const hol=isHoliday(day,yr),ph=isPH(day,yr),bo=isBlockout(day,yr),today=isToday(day);
       let cls='cal-cell';
       if(hol)cls+=' hol';else if(ph)cls+=' ph';else if(bo)cls+=' hol';else if(today)cls+=' today-col';
-      rows+=`<div class="${cls}" style="min-height:${ROW_H}px" onclick="cellClick('${team.code}','${ymd(day)}')">`;
+      rows+=`<div class="${cls}" style="min-height:${ROW_H}px"${dayLabels[di]?` title="${escapeHtml(dayLabels[di].name)}"`:''} onclick="cellClick('${team.code}','${ymd(day)}')">`;
       if(today&&!hol&&!ph&&!bo)rows+=`<div class="today-indicator"></div>`;
-      if(hol)rows+=`<div class="hol-label">Holiday</div>`;
-      else if(ph)rows+=`<div class="ph-label">PH</div>`;
-      else if(bo){const boLabel=blockouts.find(b=>b.year===yr&&b.date&&dateOnly(b.date).getTime()===dateOnly(day).getTime());rows+=`<div class="hol-label" style="font-size:8px">${boLabel?.label||'Blocked'}</div>`;}
       rows+='</div>';
     });
+    // Holiday / block-out names (sit under the school bars)
+    rows+=`<div class="hol-run-wrap" style="left:${LABEL_W}px">${holRunsHtml}</div>`;
     // Spanning blocks
     rows+=`<div class="school-span-wrap" style="left:${LABEL_W}px">`;
     rows+=`<div class="drop-hint">Drop here to assign to ${team.code}</div>`;
@@ -1132,7 +1260,7 @@ function renderCalendar(){
       const GAP=3;
       const ov=hasOverlap(s);
       // Only draggable in editor mode — we check at runtime
-      rows+=`<div class="school-span"
+      rows+=`<div class="school-span${isSchedDup(s)?' is-dup':''}"
         id="span-${s.id}"
         draggable="true"
         style="left:calc(${leftPct}% + ${GAP}px);width:calc(${widthPct}% - ${GAP*2}px);top:${topPx}px;height:44px;background:${sc};box-shadow:0 2px 8px ${sc}44;"
@@ -1145,6 +1273,7 @@ function renderCalendar(){
         <div class="sname"><span style="color:${SUB_COLORS[getSub(s)]};background:rgba(0,0,0,.38);padding:0 5px;border-radius:4px">${escapeHtml(s.name)}</span></div>
         <div class="sdates">${d2s(s.plannedStart)} – ${d2s(s.plannedEnd)} · ${netDays(s.plannedStart,s.plannedEnd,yr)} days · ${getSub(s)}</div>
         ${ov?`<div class="conflict-badge" title="Overlap detected">!</div>`:''}
+        ${isSchedDup(s)?`<div class="dup-corner" title="${escapeHtml(schedDupTitle(s))}">DUP</div>`:''}
       </div>`;
     });
     rows+='</div></div>';
@@ -1210,6 +1339,7 @@ function showTooltip(e,schoolId){
     <div style="font-size:11px;color:var(--text2)">👥 ${escapeHtml(teamLabel(s))}</div>
     <div style="font-size:11px;color:var(--text2)">📅 ${escapeHtml(dates)}</div>
     <div style="font-size:11px;color:var(--text2)">🏫 ${escapeHtml(days)}</div>
+    ${isSchedDup(s)?`<div style="font-size:11px;color:#FF8A8A;margin-top:4px">⚠ ${escapeHtml(schedDupTitle(s))}</div>`:''}
     ${s.notes?`<div style="font-size:11px;color:var(--text3);margin-top:4px;border-top:1px solid var(--border);padding-top:4px">💬 ${escapeHtml(s.notes)}</div>`:''}`;
   t.style.display='block';
   positionTooltip(e);
@@ -1270,7 +1400,7 @@ document.addEventListener('click',()=>{hideCtxMenu();});
 // ── DETAILS ────────────────────────────────────────────────────────────────
 function renderDetails(){
   const yr=state.year,srch=state.search;
-  let data=schools.filter(s=>s.year===yr&&s.name&&(!srch||s.name.toLowerCase().includes(srch)));
+  let data=schools.filter(s=>s.year===yr&&s.name&&(!srch||s.name.toLowerCase().includes(srch)||(s.notes||'').toLowerCase().includes(srch)));
   if(state.filterTeam)data=data.filter(s=>s.team===state.filterTeam);
   if(state.filterStatus)data=data.filter(s=>s.status===state.filterStatus);
   if(state.filterMonth!==null&&state.filterMonth!==undefined)data=data.filter(s=>s.plannedStart&&new Date(s.plannedStart).getMonth()===state.filterMonth);
@@ -1284,21 +1414,22 @@ function renderDetails(){
   const editable=state.isEditor;
   const thSort=(col,label)=>`<th onclick="sortBy('${col}')" title="Sort by ${label}">${label} ${state.sortCol===col?(state.sortDir===1?'↑':'↓'):''}</th>`;
   let rows='';
-  if(!data.length)rows=`<tr><td colspan="11" style="text-align:center;padding:36px;color:var(--text3)">No schools found. ${editable?'Add schools using "+ Add School".':''}</td></tr>`;
+  if(!data.length)rows=`<tr><td colspan="12" style="text-align:center;padding:36px;color:var(--text3)">No schools found. ${editable?'Add schools using "+ Add School".':''}</td></tr>`;
   else data.forEach((s,i)=>{
     const sc=getStatusColor(s.status),tc=getTeamColor(s.team);
     const ov=hasOverlap(s);
     const pd=netDays(s.plannedStart,s.plannedEnd,yr)||(isPendingSchool(s)&&s.daysRequired?`${s.daysRequired} req.`:'');
     const tl=s.plannedStart?termLabel(new Date(s.plannedStart),yr):'';
-    rows+=`<tr>
+    rows+=`<tr${isSchedDup(s)?' class="dup-row"':''}>
       <td style="color:var(--text3);font-family:'JetBrains Mono',monospace;font-size:11px">${i+1}</td>
-      <td><div style="font-weight:600">${escapeHtml(s.name)}</div>${tl}</td>
+      <td><div style="font-weight:600">${escapeHtml(s.name)}${isSchedDup(s)?dupBadge(schedDupTitle(s)):''}</div>${tl}</td>
       <td><span class="team-chip" style="background:${tc}22;color:${tc}">${teamLabel(s)}</span></td>
       <td>${d2s(s.plannedStart)}</td><td>${d2s(s.plannedEnd)}</td>
       <td style="font-family:'JetBrains Mono',monospace;text-align:center">${pd}</td>
       <td><span class="status-chip" style="background:${sc}22;color:${sc}">${s.status||'—'}</span></td>
       <td style="color:var(--text3);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(s.contact||'')}">${escapeHtml(s.contact||'')}</td>
       <td style="color:var(--accent);font-size:11px">${s.phone?`<a href="tel:${escapeHtml(s.phone)}" style="color:var(--accent);text-decoration:none">📞 ${escapeHtml(s.phone)}</a>`:''}</td>
+      <td class="notes-cell">${s.notes?`<div class="notes-clamp" title="${escapeHtml(s.notes)}">${escapeHtml(s.notes)}</div>`:''}</td>
       <td>${ov?'<span style="color:#E85050;font-size:11px;font-weight:600">⚠ Overlap</span>':''}</td>
       ${editable?`<td><button class="btn btn-ghost btn-sm" onclick="editSchool('${s.id}')">Edit</button></td>`:'<td></td>'}
     </tr>`;
@@ -1311,7 +1442,7 @@ function renderDetails(){
     <button class="btn btn-ghost btn-sm" onclick="exportCSV()">⬇ CSV</button>
   </div>
   <div class="data-table" style="overflow-x:auto"><table>
-    <thead><tr><th>#</th>${thSort('name','School')}${thSort('team','Team')}${thSort('plannedStart','Start Date')}${thSort('plannedEnd','End Date')}<th>Days</th>${thSort('status','Status')}<th>Contact</th><th>Phone</th><th>⚠</th><th></th></tr></thead>
+    <thead><tr><th>#</th>${thSort('name','School')}${thSort('team','Team')}${thSort('plannedStart','Start Date')}${thSort('plannedEnd','End Date')}<th>Days</th>${thSort('status','Status')}<th>Contact</th><th>Phone</th><th>Notes</th><th>⚠</th><th></th></tr></thead>
     <tbody>${rows}</tbody>
   </table></div>`;
 }
@@ -1356,6 +1487,8 @@ function renderDashboard(){
     <div class="stat-card"><div class="stat-label">Pending</div><div class="stat-val" style="color:#E8C842">${(byStatus['Pending Confirmation']||0)+(byStatus['Pending Annex']||0)}</div><div class="stat-sub">Awaiting confirmation</div></div>
     <div class="stat-card"><div class="stat-label">Total Screening Days</div><div class="stat-val">${totalDays}</div><div class="stat-sub">All teams combined</div></div>
     <div class="stat-card"><div class="stat-label">HMG / BOTH Schools</div><div class="stat-val" style="color:#7DD3FC">${hmgOrBothCount}</div><div class="stat-sub">Unique schools — SCP-only excluded, HMG+SCP counted once</div></div>
+    ${(()=>{const dd=dupData(yr),ns=dd.schedGroups.length,ni=dd.infoGroups.length,t=ns+ni;
+      return`<div class="stat-card" style="cursor:pointer" onclick="setView('notifications')" title="Open Alerts to review"><div class="stat-label">Duplicate entries</div><div class="stat-val" style="color:${t?'#E85050':'#5EC98A'}">${t}</div><div class="stat-sub">${t?`${ns} in the schedule · ${ni} in Schools Info`:'None found'}</div></div>`;})()}
   </div>
   <div class="chart-row">
     <div class="chart-card">
@@ -1402,6 +1535,8 @@ function renderDashboard(){
 }
 
 // ── NOTIFICATIONS ──────────────────────────────────────────────────────────
+// Row number a Schools Info entry shows in the grid for its year
+function infoYearRowNumber(i){let n=0;for(let k=0;k<=i;k++)if(infoYear(schoolsInfo[k])===infoYear(schoolsInfo[i]))n++;return n;}
 function renderNotifications(){
   const alerts=getPendingAlerts();
   const today=new Date();today.setHours(0,0,0,0);
@@ -1434,7 +1569,23 @@ function renderNotifications(){
     });
     html+='</div>';
   }
-  if(!alerts.length&&!overlaps.length)html=`<div class="empty"><div class="empty-icon">✅</div><div class="empty-text">No alerts! All schools confirmed and no conflicts.</div></div>`;
+  const dd=dupData(state.year);
+  if(dd.schedGroups.length||dd.infoGroups.length){
+    html=`<div class="notif-panel"><div class="notif-header">⚠ Duplicate entries (${dd.schedGroups.length+dd.infoGroups.length})</div>`+
+      dd.schedGroups.map(g=>`<div class="notif-item">
+        <span class="notif-days" style="background:#C84040">DUP</span>
+        <div style="flex:1"><div style="font-weight:600">${escapeHtml(g[0].name)} — entered ${g.length}× in the ${state.year} schedule</div>
+        <div style="font-size:11px;color:var(--text2)">${g.map(e=>escapeHtml(entryDesc(e))).join(' · ')}</div></div>
+        ${state.isEditor?g.map((e,k)=>`<button class="btn btn-ghost btn-sm" onclick="editSchool('${e.id}')">Edit #${k+1}</button>`).join(''):''}
+      </div>`).join('')+
+      dd.infoGroups.map(a=>`<div class="notif-item">
+        <span class="notif-days" style="background:#C84040">DUP</span>
+        <div style="flex:1"><div style="font-weight:600">${escapeHtml(schoolsInfo[a[0]].name)} — entered ${a.length}× in the ${state.year} Schools Info</div>
+        <div style="font-size:11px;color:var(--text2)">Rows ${a.map(i=>infoYearRowNumber(i)).join(', ')} of the Schools Info list</div></div>
+        <button class="btn btn-ghost btn-sm" onclick="setView('schools')">Open Schools Info</button>
+      </div>`).join('')+`</div>`+html;
+  }
+  if(!alerts.length&&!overlaps.length&&!dd.schedGroups.length&&!dd.infoGroups.length)html=`<div class="empty"><div class="empty-icon">✅</div><div class="empty-text">No alerts! All schools confirmed, no conflicts and no duplicates.</div></div>`;
   return html;
 }
 
@@ -1444,7 +1595,9 @@ function renderWhatsApp(){
   if(state.waTermIdx===undefined)state.waTermIdx=currentTermIndex(state.year);
   const msg=generateWAMessage();
   const periodLabels={week:'Weekly Team Briefing',month:'Monthly Team Update',term:'Term Update'};
+  const dupN=dupData(state.year).schedGroups.length;
   return`<div style="max-width:640px">
+    ${dupN?`<div style="background:rgba(200,64,64,.12);border:1px solid #C84040;border-radius:var(--r);padding:8px 12px;margin-bottom:12px;font-size:12px;color:#FF9A9A;cursor:pointer" onclick="setView('notifications')">⚠ ${dupN} duplicate school ${dupN===1?'entry':'entries'} in the ${state.year} schedule — a school may be listed twice below. Click to review.</div>`:''}
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
       <div class="view-tabs">
         <div class="view-tab ${state.waPeriod==='week'?'active':''}" onclick="setWAPeriod('week')">Weekly</div>
@@ -1547,8 +1700,9 @@ function annexListHtml(){
   if(!matches.length)return`<div class="empty"><div class="empty-icon">📄</div><div class="empty-text">No matching schools</div></div>`;
   const rows=matches.map(s=>{
     const i=schoolsInfo.indexOf(s);
-    return`<tr>
-      <td style="font-weight:600">${escapeHtml(s.name)}</td>
+    const dupI=isInfoDup(i);
+    return`<tr${dupI?' class="dup-row"':''}>
+      <td style="font-weight:600">${escapeHtml(s.name)}${dupI?dupBadge(infoDupTitle(i)):''}</td>
       <td>${s.annexUrl?`<a href="${escapeHtml(s.annexUrl)}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none">📄 ${escapeHtml(s.annexFilename||'View PDF')}</a>`:`<span style="color:var(--text3);font-size:11px">No PDF uploaded</span>`}</td>
       <td style="color:var(--text3);font-size:11px">${s.annexUploadedAt||''}</td>
       <td style="text-align:center;white-space:nowrap">
@@ -1671,9 +1825,10 @@ function renderSchoolsDirectory(){
   const yearIdx=[];schoolsInfo.forEach((x,k)=>{if(infoYear(x)===yr)yearIdx.push(k);});
   let rows=yearIdx.map((i,n)=>{const s=schoolsInfo[i];
     const fields=(key,ph,w='60px',mono=true)=>`<input class="info-input" style="width:${w};${mono?"font-family:'JetBrains Mono',monospace;":''}" value="${s[key]||''}" placeholder="${ph}" ${ed?`onchange="updateInfo(${i},'${key}',this.value)"`:'readonly'}>`;
-    return`<tr>
+    const dupI=isInfoDup(i);
+    return`<tr data-info-i="${i}"${dupI?' class="dup-row"':''}>
       <td style="color:var(--text3);font-size:10px;font-family:'JetBrains Mono',monospace">${n+1}</td>
-      <td>${fields('name','School name','180px',false)}</td>
+      <td style="white-space:nowrap">${fields('name','School name','180px',false)}<span class="info-dup-slot">${dupI?dupBadge(infoDupTitle(i)):''}</span></td>
       <td>${fields('address','Address','180px',false)}</td>
       <td>${fields('postal','000000','68px')}</td>
       <td>${fields('contact','Contact','110px',false)}</td>
@@ -1718,6 +1873,10 @@ async function updateInfo(i,k,v){
     return;
   }
   saveInfo();
+  if(k==='name'){
+    refreshInfoDupFlags();
+    if(isInfoDup(i))toast(`⚠ "${v}" is already in the ${infoYear(schoolsInfo[i])} Schools Info`,'#C84040');
+  }
 }
 
 // ── GEOCODING (address/postal → lat/lng) ────────────────────────────────────
@@ -1804,9 +1963,11 @@ function renderMapSchoolList(filter){
   list.innerHTML=matches.map(s=>{
     const confirmed=isSchoolConfirmed(s.name);
     const located=s.lat&&s.lng;
+    const dupI=isInfoDup(schoolsInfo.indexOf(s));
     return`<div onclick="flyToSchool('${s.name.replace(/'/g,"\\'")}')" style="padding:7px 6px;border-radius:6px;cursor:${located?'pointer':'default'};opacity:${located?1:.5};display:flex;align-items:center;gap:7px;font-size:12px" onmouseenter="this.style.background='rgba(255,255,255,.05)'" onmouseleave="this.style.background='transparent'">
       <span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:${confirmed?'#3D9E6A':'#4F8EF7'}"></span>
       <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(s.name)}</span>
+      ${dupI?dupBadge(infoDupTitle(schoolsInfo.indexOf(s))):''}
       ${!located?'<span style="margin-left:auto;font-size:9px;color:var(--text3)">not located</span>':''}
     </div>`;
   }).join('');
@@ -1840,10 +2001,11 @@ function plotSchoolMarkers(){
   const located=infoOfYear(state.year).filter(s=>s.name&&s.lat&&s.lng);
   located.forEach(s=>{
     const confirmed=isSchoolConfirmed(s.name);
+    const dupI=isInfoDup(schoolsInfo.indexOf(s));
     const marker=L.circleMarker([s.lat,s.lng],{
       radius:8,fillColor:confirmed?'#3D9E6A':'#4F8EF7',color:'#fff',weight:2,fillOpacity:0.9
     }).addTo(mapInstance);
-    marker.bindPopup(`<strong>${escapeHtml(s.name)}</strong>${confirmed?' ✅':''}<br>${escapeHtml(s.address||s.postal||'')}${s.contact?`<br>👤 ${escapeHtml(s.contact)}`:''}`);
+    marker.bindPopup(`<strong>${escapeHtml(s.name)}</strong>${confirmed?' ✅':''}${dupI?'<br><span style="color:#C84040;font-weight:700">⚠ Duplicate entry</span>':''}<br>${escapeHtml(s.address||s.postal||'')}${s.contact?`<br>👤 ${escapeHtml(s.contact)}`:''}`);
     mapMarkers.push(marker);
     mapMarkersByName[s.name]=marker;
   });
@@ -1875,9 +2037,9 @@ function renderArchive(){
   if(!archived.length)return`<div class="empty"><div class="empty-icon">🗂</div><div class="empty-text">No completed screenings for ${state.year} yet.</div><div style="font-size:12px;color:var(--text3)">Appears when Status = Accepted and end date has passed.</div></div>`;
   let rows=archived.sort((a,b)=>new Date(a.plannedStart)-new Date(b.plannedStart)).map((s,i)=>{
     const tc=getTeamColor(s.team),pd=netDays(s.plannedStart,s.plannedEnd,state.year);
-    return`<tr>
+    return`<tr${isSchedDup(s)?' class="dup-row"':''}>
       <td style="color:var(--text3);font-size:11px">${i+1}</td>
-      <td style="font-weight:600">${escapeHtml(s.name)}</td>
+      <td style="font-weight:600">${escapeHtml(s.name)}${isSchedDup(s)?dupBadge(schedDupTitle(s)):''}</td>
       <td><span class="team-chip" style="background:${tc}22;color:${tc}">${escapeHtml(teamLabel(s))}</span></td>
       <td>${d2s(s.plannedStart)}</td><td>${d2s(s.plannedEnd)}</td>
       <td style="font-family:'JetBrains Mono',monospace;text-align:center">${pd}</td>
@@ -2160,6 +2322,7 @@ function showAddSchool(team='',dateStr=''){
   document.getElementById('f-pend').value=dateStr;
   document.getElementById('f-days').value='';
   populateSchoolNameSuggestions();
+  updateSchoolDupWarning();
   document.getElementById('school-modal').style.display='flex';
   setTimeout(()=>document.getElementById('f-name').focus(),50);
 }
@@ -2180,6 +2343,7 @@ function editSchool(id){
   document.getElementById('f-email').value=s.email||'';
   document.getElementById('f-notes').value=s.notes||'';
   populateSchoolNameSuggestions();
+  updateSchoolDupWarning();
   document.getElementById('school-modal').style.display='flex';
 }
 function calcDays(){
@@ -2300,11 +2464,12 @@ function renderPendingPanel(yr){
   const chips=list.map(s=>{
     const sc=getStatusColor(s.status),sub=getSub(s);
     const drag=ed?` draggable="true" ondragstart="onSpanDragStart(event,'${s.id}','${sc}')" ondragend="onSpanDragEnd(event,'${s.id}')" onclick="editPending('${s.id}')"`:'';
-    return`<div class="pending-chip" id="span-${s.id}" style="border-left-color:${sc}"${drag} title="${escapeHtml((s.status||'')+(s.notes?' — '+s.notes:''))}">
+    return`<div class="pending-chip${isSchedDup(s)?' is-dup':''}" id="span-${s.id}" style="border-left-color:${sc}"${drag} title="${escapeHtml((s.status||'')+(s.notes?' — '+s.notes:''))}">
       <span class="pc-name" style="color:${SUB_COLORS[sub]}">${escapeHtml(s.name)}</span>
       <span class="pc-days">${s.daysRequired?`${s.daysRequired} ${s.daysRequired===1?'day':'days'}`:'? days'}</span>
       ${sub!=='BOTH'?`<span class="pc-sub">${sub}</span>`:''}
       <span class="pc-status" style="color:${sc}">${escapeHtml(statusShort(s.status))}</span>
+      ${isSchedDup(s)?dupBadge(schedDupTitle(s)):''}
     </div>`;
   }).join('');
   return`<div class="pending-panel" id="pending-panel" ondragover="onPendingDragOver(event)" ondragleave="onPendingDragLeave(event)" ondrop="onPendingDrop(event)">
@@ -2333,6 +2498,7 @@ function showAddPending(){
   document.getElementById('delete-pending-btn').style.display='none';
   fillPendingForm({});
   populateSchoolNameSuggestions();
+  updatePendingDupWarning();
   document.getElementById('pending-modal').style.display='flex';
   setTimeout(()=>document.getElementById('pf-name').focus(),50);
 }
@@ -2344,6 +2510,7 @@ function editPending(id){
   document.getElementById('delete-pending-btn').style.display='';
   fillPendingForm({name:s.name,days:s.daysRequired,sub:getSub(s),status:s.status,notes:s.notes});
   populateSchoolNameSuggestions();
+  updatePendingDupWarning();
   document.getElementById('pending-modal').style.display='flex';
 }
 function closePendingModal(){document.getElementById('pending-modal').style.display='none';state.editingPendingId=null;}
@@ -2383,9 +2550,12 @@ function onPendingDragOver(e){
   if(!s||isPendingSchool(s))return;
   e.preventDefault();e.dataTransfer.dropEffect='move';
   document.getElementById('pending-panel')?.classList.add('drag-over');
+  dropPreviewCells.forEach(c=>c.classList.remove('drop-preview'));dropPreviewCells=[];
+  if(dragGhost)dragGhost.textContent=`${s.name} → back to Pending`;
 }
 function onPendingDragLeave(e){
   const p=document.getElementById('pending-panel');if(!p)return;
+  if(e.relatedTarget&&p.contains(e.relatedTarget))return;
   const r=p.getBoundingClientRect();
   if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)p.classList.remove('drag-over');
 }
@@ -2393,6 +2563,7 @@ function onPendingDrop(e){
   if(!state.isEditor)return;
   e.preventDefault();
   document.getElementById('pending-panel')?.classList.remove('drag-over');
+  clearDropPreview();
   const id=e.dataTransfer.getData('text/plain')||dragId;
   const s=schools.find(x=>x.id===id);
   if(!s||isPendingSchool(s)){dragId=null;return;}
@@ -2408,7 +2579,13 @@ function onPendingDrop(e){
 }
 
 // ── DRAG & DROP ────────────────────────────────────────────────────────────
-let dragId=null,dragGhost=null,dragGrabIdx=0,calDays=[];
+let dragId=null,dragGhost=null,dragGrabIdx=0,calDays=[],dropPreviewCells=[],lastPressX=null,lastPressT=0;
+// Where the pointer was when the button went down — the browser's own dragstart position can
+// drift a few pixels, which is enough to land one day-column out on narrow Term-view columns.
+document.addEventListener('pointerdown',e=>{lastPressX=e.clientX;lastPressT=Date.now();},true);
+// An invisible drag image, so only our own label (which shows the landing dates) follows the cursor
+const BLANK_DRAG_IMG=new Image();BLANK_DRAG_IMG.src='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+function fmtDay(d){return new Date(d).toLocaleDateString('en-SG',{weekday:'short',day:'numeric',month:'short'});}
 
 // Which day column (0-based) is under a horizontal pixel position in a calendar row.
 function colIndexFromX(rowEl,x){
@@ -2435,6 +2612,37 @@ function endAfterSchoolDays(start,n,yr){
 }
 // Work out a school's new dates if it is moved `shift` day-columns, keeping the same
 // number of school days. (If it had none — e.g. it sat entirely on holidays — keep its width.)
+// Where would `s` land if dropped at clientX in `row`? (the same answer feeds the live preview and the drop)
+function dropRange(s,row,clientX){
+  if(!row)return null;
+  const yr=s.year||state.year,col=colIndexFromX(row,clientX);
+  let r;
+  if(isPendingSchool(s)){
+    if(!calDays[col])return null;
+    const start=new Date(calDays[col]);start.setHours(0,0,0,0);
+    for(let g=0;g<30&&!isSchoolDayOn(start,yr);g++)start.setDate(start.getDate()+1);
+    r={start:ymd(start),end:ymd(endAfterSchoolDays(start,s.daysRequired||1,yr))};
+  }else{
+    const shift=col-dragGrabIdx;
+    r=shift===0?{start:ymd(s.plannedStart),end:ymd(s.plannedEnd)}:shiftedRange(s,shift,yr);
+  }
+  r.days=netDays(r.start,r.end,yr);
+  return r;
+}
+function clearDropPreview(){
+  dropPreviewCells.forEach(c=>c.classList.remove('drop-preview'));dropPreviewCells=[];
+  if(dragGhost&&dragGhost.dataset.base!==undefined)dragGhost.textContent=dragGhost.dataset.base;
+}
+function showDropPreview(e,row,teamCode){
+  dropPreviewCells.forEach(c=>c.classList.remove('drop-preview'));dropPreviewCells=[];
+  const s=schools.find(x=>x.id===dragId);
+  if(!s||!row)return;
+  const r=dropRange(s,row,e.clientX);
+  if(!r)return;
+  const cells=row.querySelectorAll('.cal-cell');
+  calDays.forEach((d,i)=>{const k=ymd(d);if(k>=r.start&&k<=r.end&&cells[i]){cells[i].classList.add('drop-preview');dropPreviewCells.push(cells[i]);}});
+  if(dragGhost)dragGhost.textContent=`${s.name} → ${fmtDay(r.start)} – ${fmtDay(r.end)} · ${r.days} school day${r.days===1?'':'s'}${s.team!==teamCode?` · ${teamCode}`:''}`;
+}
 function shiftedRange(s,shift,yr){
   const newStart=addWeekdays(s.plannedStart,shift);
   const n=netDays(s.plannedStart,s.plannedEnd,yr)||0;
@@ -2456,15 +2664,18 @@ function onSpanDragStart(e,id,color){
   if(!s)return;
   // remember which day column was grabbed, so the drop can work out how far it moved
   const grabbedEl=document.getElementById('span-'+id);
-  dragGrabIdx=colIndexFromX(grabbedEl?grabbedEl.closest('.cal-row'):null,e.clientX);
+  const grabX=(lastPressX!==null&&Date.now()-lastPressT<15000)?lastPressX:e.clientX;
+  dragGrabIdx=colIndexFromX(grabbedEl?grabbedEl.closest('.cal-row'):null,grabX);
 
   // Create custom ghost element
   dragGhost=document.createElement('div');
   dragGhost.className='drag-ghost';
   dragGhost.style.background=color;
   dragGhost.textContent=s.name;
+  dragGhost.dataset.base=s.name;
+  dragGhost.style.left=(e.clientX+14)+'px';dragGhost.style.top=(e.clientY-20)+'px';
   document.body.appendChild(dragGhost);
-  e.dataTransfer.setDragImage(dragGhost,0,0);
+  e.dataTransfer.setDragImage(BLANK_DRAG_IMG,0,0);
   e.dataTransfer.effectAllowed='move';
   e.dataTransfer.setData('text/plain',id);
 
@@ -2476,6 +2687,7 @@ function onSpanDragStart(e,id,color){
 }
 
 function onSpanDragEnd(e,id){
+  clearDropPreview();
   // Remove ghost
   if(dragGhost){dragGhost.remove();dragGhost=null;}
   // Restore original opacity
@@ -2499,15 +2711,18 @@ function onRowDragOver(e,teamCode){
     });
     row.classList.add('drag-over');
   }
+  showDropPreview(e,row,teamCode);
 }
 
 function onRowDragLeave(e,teamCode){
   // Only remove if truly leaving the row (not entering a child)
   const row=document.getElementById('team-row-'+teamCode);
   if(!row)return;
+  if(e.relatedTarget&&row.contains(e.relatedTarget))return; // just moved between day cells inside this row
   const rect=row.getBoundingClientRect();
   if(e.clientX<rect.left||e.clientX>rect.right||e.clientY<rect.top||e.clientY>rect.bottom){
     row.classList.remove('drag-over');
+    clearDropPreview();
   }
 }
 
@@ -2524,25 +2739,22 @@ function onRowDrop(e,targetTeam){
   if(isPendingSchool(s)){
     // place it on the day column it was dropped on (moved forward to the next school day
     // if that column is a weekend-adjacent holiday), running for the days required
-    const col=colIndexFromX(row,e.clientX);
-    if(!calDays[col]){clearHighlights();dragId=null;return;}
-    const start=new Date(calDays[col]);start.setHours(0,0,0,0);
-    for(let g=0;g<30&&!isSchoolDayOn(start,yr);g++)start.setDate(start.getDate()+1);
+    const placed=dropRange(s,row,e.clientX);
+    if(!placed){clearHighlights();clearDropPreview();dragId=null;return;}
     const need=s.daysRequired||1;
-    const end=endAfterSchoolDays(start,need,yr);
-    s.team=targetTeam;s.plannedStart=ymd(start);s.plannedEnd=ymd(end);
+    s.team=targetTeam;s.plannedStart=placed.start;s.plannedEnd=placed.end;
+    clearDropPreview();
     clearHighlights();save();
     addLog(`Scheduled <strong>${escapeHtml(s.name)}</strong> on ${escapeHtml(teamLabel(s))}: ${d2s(s.plannedStart)} – ${d2s(s.plannedEnd)} (${need} days)`);
     toast(`${s.name} scheduled on ${targetTeam}, ${d2s(s.plannedStart)} ✓`,'#3D9E6A');
     dragId=null;render();return;
   }
   // how many day-columns sideways was it dropped from where it was picked up?
-  const shift=row?colIndexFromX(row,e.clientX)-dragGrabIdx:0;
   const oldTeam=s.team,oldStart=s.plannedStart,oldEnd=s.plannedEnd;
   const teamChanged=oldTeam!==targetTeam;
-  let moved=null;
-  if(shift!==0&&oldStart&&oldEnd)moved=shiftedRange(s,shift,yr);
-  clearHighlights();
+  const range=dropRange(s,row,e.clientX);
+  const moved=(range&&oldStart&&oldEnd&&(range.start!==ymd(oldStart)||range.end!==ymd(oldEnd)))?range:null;
+  clearDropPreview();clearHighlights();
   if(!teamChanged&&!moved){dragId=null;return;}
   if(teamChanged)s.team=targetTeam;
   if(moved){s.plannedStart=moved.start;s.plannedEnd=moved.end;}
