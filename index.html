@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>YPHS Health Screening Scheduler</title>
-<!-- BUILD MARKER: v2026-09-11-fixes31 — if you can't find this exact string with
+<!-- BUILD MARKER: v2026-09-11-fixes31a — if you can't find this exact string with
      Ctrl/Cmd+F while viewing the page source, you are opening a stale/old copy
      of this file, not the latest one. -->
 <style>
@@ -301,7 +301,7 @@ tr.dup-row>td:first-child{box-shadow:inset 3px 0 0 #C84040;}
       <button class="btn-icon" onclick="toggleTheme()" title="Toggle theme">🌙</button>
       <button class="btn-icon" onclick="exportPDF()" title="Export PDF" id="pdf-btn" style="display:none">🖨</button>
       <div class="lock-badge" id="lock-badge" onclick="showPinModal()">🔒 View only</div>
-      <div title="Build version — confirms you're on the latest file" style="font-size:9px;color:var(--text3);opacity:.5;padding:2px 6px;font-family:'JetBrains Mono',monospace">v2026-09-11-fixes31</div>
+      <div title="Build version — confirms you're on the latest file" style="font-size:9px;color:var(--text3);opacity:.5;padding:2px 6px;font-family:'JetBrains Mono',monospace">v2026-09-11-fixes31a</div>
       <button class="btn btn-primary btn-sm" id="add-btn" onclick="showAddSchool()" style="display:none">+ Add School</button>
     </div>
   </div>
@@ -338,8 +338,15 @@ tr.dup-row>td:first-child{box-shadow:inset 3px 0 0 #C84040;}
 <div class="modal">
   <h3>🔐 Editor Access</h3>
   <p>Enter the PIN to unlock editing for your team.</p>
-  <input class="pin-input" type="password" id="pin-input" maxlength="6" placeholder="••••" oninput="document.getElementById('pin-error').textContent=''">
+  <input class="pin-input" type="password" id="pin-input" maxlength="20" placeholder="••••" oninput="document.getElementById('pin-error').textContent=''">
   <div class="pin-error" id="pin-error"></div>
+  <div style="text-align:center;margin-top:4px"><a href="#" onclick="event.preventDefault();toggleForgotPin()" style="font-size:11px;color:var(--text3)">Forgot the PIN?</a></div>
+  <div id="pin-forgot" style="display:none;margin-top:10px">
+    <p style="font-size:11px;color:var(--text2);margin:0 0 6px">Enter the site password to reset the PIN <b>on this browser</b> back to the default, <b>2027</b>. Then unlock with 2027 and set a new PIN in Settings.</p>
+    <input class="pin-input" type="password" id="pin-reset-pw" placeholder="Site password" style="letter-spacing:normal" onkeydown="if(event.key==='Enter')resetPinWithSitePassword()">
+    <div class="pin-error" id="pin-reset-msg"></div>
+    <button class="btn btn-ghost btn-sm" onclick="resetPinWithSitePassword()">Reset PIN to 2027</button>
+  </div>
   <div class="modal-btns">
     <button class="btn btn-ghost" onclick="closePinModal()">Cancel</button>
     <button class="btn btn-primary" onclick="checkPin()">Unlock</button>
@@ -421,7 +428,7 @@ let SITE_PASSWORD = localStorage.getItem('yphs_site_pw') || 'YPHS2026';
 let EDITOR_PIN    = localStorage.getItem('yphs_editor_pin') || '2027';
 // Keep PIN alias for backward compatibility with existing checkPin() calls
 const SHEET_ID='11MDEThuNiyEiZaKh6Yqt-CdwXG5K0V1IfBI4T9Mhli8';
-const BUILD_VERSION='v2026-09-11-fixes31';
+const BUILD_VERSION='v2026-09-11-fixes31a';
 // If a newer version of this page has been deployed, this tab is running old code
 // against possibly-newer data. Saving from it could overwrite other people's work
 // (or drop columns added by the update), so it is blocked until the page is refreshed.
@@ -1056,7 +1063,25 @@ function updateProgress(){
 
 // ── AUTH ───────────────────────────────────────────────────────────────────
 function showPinModal(){if(state.isEditor){lockEditor();return;}document.getElementById('pin-modal').style.display='flex';setTimeout(()=>document.getElementById('pin-input').focus(),50);}
-function closePinModal(){document.getElementById('pin-modal').style.display='none';document.getElementById('pin-input').value='';document.getElementById('pin-error').textContent='';}
+function closePinModal(){document.getElementById('pin-modal').style.display='none';document.getElementById('pin-input').value='';document.getElementById('pin-error').textContent='';document.getElementById('pin-forgot').style.display='none';document.getElementById('pin-reset-pw').value='';document.getElementById('pin-reset-msg').textContent='';}
+function toggleForgotPin(){
+  const el=document.getElementById('pin-forgot');
+  el.style.display=el.style.display==='none'?'':'none';
+  document.getElementById('pin-reset-msg').textContent='';
+  if(el.style.display!=='none')setTimeout(()=>document.getElementById('pin-reset-pw').focus(),50);
+}
+function resetPinWithSitePassword(){
+  const pw=document.getElementById('pin-reset-pw').value.trim();
+  const msg=document.getElementById('pin-reset-msg');
+  if(pw!==SITE_PASSWORD){msg.textContent='That is not the site password.';return;}
+  EDITOR_PIN='2027';
+  try{localStorage.removeItem('yphs_editor_pin');}catch(e){}
+  document.getElementById('pin-reset-pw').value='';
+  document.getElementById('pin-forgot').style.display='none';
+  document.getElementById('pin-error').textContent='';
+  addLog('Editor PIN was reset to the default using the site password');
+  toast('PIN reset to 2027 on this browser — unlock with it, then set a new PIN in Settings','#3D9E6A');
+}
 function checkPin(){
   const v=document.getElementById('pin-input').value.trim();
   if(v===EDITOR_PIN){state.isEditor=true;document.getElementById('lock-badge').textContent='🔓 Editing';document.getElementById('lock-badge').classList.add('unlocked');document.getElementById('add-btn').style.display='';closePinModal();addLog('Editor mode unlocked');toast('Editor mode unlocked ✓','#3D9E6A');render();}
@@ -2804,7 +2829,7 @@ function changeSitePassword(){
   document.getElementById('site-pw-input') && (document.getElementById('site-pw-input').value='');
   addLog(`Site password changed`);
   msg.style.color='#3D9E6A';
-  msg.textContent='✓ Site password updated! Share the new password with your team.';
+  msg.textContent='✓ Site password updated — on THIS browser only. Other computers/phones still use their own password (YPHS2026 unless changed there too).';
   document.getElementById('new-site-pw').value='';
   document.getElementById('confirm-site-pw').value='';
   toast('Site password updated ✓','#3D9E6A');
@@ -2822,7 +2847,7 @@ function changeEditorPin(){
   localStorage.setItem('yphs_editor_pin',nw);
   addLog(`Editor PIN changed`);
   msg.style.color='#3D9E6A';
-  msg.textContent='✓ Editor PIN updated! Share with coordinators only.';
+  msg.textContent='✓ Editor PIN updated — on THIS browser only. Other computers/phones keep their own PIN (2027 unless changed there too).';
   document.getElementById('new-editor-pin').value='';
   document.getElementById('confirm-editor-pin').value='';
   toast('Editor PIN updated ✓','#3D9E6A');
