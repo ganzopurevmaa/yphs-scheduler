@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>YPHS Health Screening Scheduler</title>
-<!-- BUILD MARKER: v2026-09-11-fixes33 — if you can't find this exact string with
+<!-- BUILD MARKER: v2026-09-11-fixes34 — if you can't find this exact string with
      Ctrl/Cmd+F while viewing the page source, you are opening a stale/old copy
      of this file, not the latest one. -->
 <style>
@@ -305,7 +305,7 @@ tr.dup-row>td:first-child{box-shadow:inset 3px 0 0 #C84040;}
       <button class="btn-icon" onclick="toggleTheme()" title="Toggle theme">🌙</button>
       <button class="btn-icon" onclick="exportPDF()" title="Export PDF" id="pdf-btn" style="display:none">🖨</button>
       <div class="lock-badge" id="lock-badge" onclick="showPinModal()">🔒 View only</div>
-      <div title="Build version — confirms you're on the latest file" style="font-size:9px;color:var(--text3);opacity:.5;padding:2px 6px;font-family:'JetBrains Mono',monospace">v2026-09-11-fixes33</div>
+      <div title="Build version — confirms you're on the latest file" style="font-size:9px;color:var(--text3);opacity:.5;padding:2px 6px;font-family:'JetBrains Mono',monospace">v2026-09-11-fixes34</div>
       <button class="btn btn-primary btn-sm" id="add-btn" onclick="showAddSchool()" style="display:none">+ Add School</button>
     </div>
   </div>
@@ -435,7 +435,7 @@ let SITE_PASSWORD = localStorage.getItem('yphs_site_pw') || 'YPHS2026';
 let EDITOR_PIN    = localStorage.getItem('yphs_editor_pin') || '2027';
 // Keep PIN alias for backward compatibility with existing checkPin() calls
 const SHEET_ID='11MDEThuNiyEiZaKh6Yqt-CdwXG5K0V1IfBI4T9Mhli8';
-const BUILD_VERSION='v2026-09-11-fixes33';
+const BUILD_VERSION='v2026-09-11-fixes34';
 // If a newer version of this page has been deployed, this tab is running old code
 // against possibly-newer data. Saving from it could overwrite other people's work
 // (or drop columns added by the update), so it is blocked until the page is refreshed.
@@ -1376,15 +1376,17 @@ function showTooltip(e,schoolId){
     <div style="font-size:11px;color:var(--text2)">🏫 ${escapeHtml(days)}</div>
     ${s.locked?'<div style="font-size:11px;color:#F0C060;margin-top:3px">🔒 Locked in place</div>':''}
     ${isSchedDup(s)?`<div style="font-size:11px;color:#FF8A8A;margin-top:4px">⚠ ${escapeHtml(schedDupTitle(s))}</div>`:''}
-    ${s.notes?`<div style="font-size:11px;color:var(--text3);margin-top:4px;border-top:1px solid var(--border);padding-top:4px">💬 ${escapeHtml(s.notes)}</div>`:''}`;
+    ${s.notes?`<div style="margin-top:6px;border-top:1px solid var(--border);padding-top:6px"><div style="font-size:10px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--text3);margin-bottom:2px">Notes / Remarks</div><div style="font-size:15px;line-height:1.45;font-weight:500;color:var(--text);white-space:pre-wrap;word-break:break-word">💬 ${escapeHtml(s.notes)}</div></div>`:''}`;
+  t.style.maxWidth=s.notes?'380px':'240px';
   t.style.display='block';
   positionTooltip(e);
 }
 function positionTooltip(e){
   const t=document.getElementById('tooltip');
+  const w=t.offsetWidth||260,h=t.offsetHeight||140;
   let x=e.clientX+12,y=e.clientY+12;
-  if(x+260>window.innerWidth)x=e.clientX-260;
-  if(y+140>window.innerHeight)y=e.clientY-140;
+  if(x+w>window.innerWidth-8)x=Math.max(8,e.clientX-w-12);
+  if(y+h>window.innerHeight-8)y=Math.max(8,e.clientY-h-12);
   t.style.left=x+'px';t.style.top=y+'px';
 }
 function hideTooltip(){document.getElementById('tooltip').style.display='none';}
@@ -1578,8 +1580,22 @@ function renderDashboard(){
 // ── NOTIFICATIONS ──────────────────────────────────────────────────────────
 // Row number a Schools Info entry shows in the grid for its year
 function infoYearRowNumber(i){let n=0;for(let k=0;k<=i;k++)if(infoYear(schoolsInfo[k])===infoYear(schoolsInfo[i]))n++;return n;}
+// Reminder date = 2 calendar months before a school's start date (day clamped to month length)
+function twoMonthsBefore(d){
+  const x=dateOnly(d),day=x.getDate();
+  x.setDate(1);x.setMonth(x.getMonth()-2);
+  x.setDate(Math.min(day,new Date(x.getFullYear(),x.getMonth()+1,0).getDate()));
+  return x;
+}
+function getReminders(yr){
+  const today=new Date();today.setHours(0,0,0,0);
+  return schools.filter(s=>s.year===yr&&s.name&&s.plannedStart&&s.plannedEnd&&dateOnly(s.plannedStart)>=today)
+    .map(s=>({s,remind:twoMonthsBefore(s.plannedStart)}))
+    .sort((a,b)=>(a.remind-b.remind)||(new Date(a.s.plannedStart)-new Date(b.s.plannedStart)));
+}
 function renderNotifications(){
   const alerts=getPendingAlerts();
+  const reminders=getReminders(state.year);
   const today=new Date();today.setHours(0,0,0,0);
   const overlaps=schools.filter(s=>s.year===state.year&&s.name&&hasOverlap(s));
   let html='';
@@ -1593,6 +1609,25 @@ function renderNotifications(){
         <div style="flex:1"><div style="font-weight:600">${escapeHtml(s.name)}</div>
         <div style="font-size:11px;color:var(--text2)">${d2s(s.plannedStart)} – ${d2s(s.plannedEnd)} · <span style="color:${tc}">${escapeHtml(teamLabel(s))}</span></div></div>
         <span class="status-chip" style="background:${getStatusColor(s.status)}22;color:${getStatusColor(s.status)}">${s.status}</span>
+        ${state.isEditor?`<button class="btn btn-ghost btn-sm" onclick="editSchool('${s.id}')">Edit</button>`:''}
+      </div>`;
+    });
+    html+='</div>';
+  }
+  if(reminders.length){
+    const DAY=1000*60*60*24;
+    const dueN=reminders.filter(r=>r.remind<=today).length;
+    html+=`<div class="notif-panel"><div class="notif-header" style="background:rgba(79,142,247,.1);color:var(--accent)">🔔 2-month reminders — ${state.year} schools on the calendar (${reminders.length})${dueN?` · ${dueN} due now`:''}</div>`;
+    reminders.forEach(({s,remind})=>{
+      const due=remind<=today;
+      const toStart=Math.round((dateOnly(s.plannedStart)-today)/DAY);
+      const toRemind=Math.round((remind-today)/DAY);
+      const tc=getTeamColor(s.team);
+      html+=`<div class="notif-item">
+        <span class="notif-days" style="background:${due?'#C87020':'#4F8EF7'}">${due?'DUE':'in '+toRemind+'d'}</span>
+        <div style="flex:1"><div style="font-weight:600">${escapeHtml(s.name)}</div>
+        <div style="font-size:11px;color:var(--text2)">Remind on ${dFull(remind)} · starts ${dFull(s.plannedStart)} (${toStart===0?'today':'in '+toStart+'d'}) · <span style="color:${tc}">${escapeHtml(teamLabel(s))}</span></div></div>
+        <span class="status-chip" style="background:${getStatusColor(s.status)}22;color:${getStatusColor(s.status)}">${escapeHtml(s.status||'')}</span>
         ${state.isEditor?`<button class="btn btn-ghost btn-sm" onclick="editSchool('${s.id}')">Edit</button>`:''}
       </div>`;
     });
@@ -1626,7 +1661,7 @@ function renderNotifications(){
         <button class="btn btn-ghost btn-sm" onclick="setView('schools')">Open Schools Info</button>
       </div>`).join('')+`</div>`+html;
   }
-  if(!alerts.length&&!overlaps.length&&!dd.schedGroups.length&&!dd.infoGroups.length)html=`<div class="empty"><div class="empty-icon">✅</div><div class="empty-text">No alerts! All schools confirmed, no conflicts and no duplicates.</div></div>`;
+  if(!alerts.length&&!reminders.length&&!overlaps.length&&!dd.schedGroups.length&&!dd.infoGroups.length)html=`<div class="empty"><div class="empty-icon">✅</div><div class="empty-text">No alerts! All schools confirmed, no conflicts and no duplicates.</div></div>`;
   return html;
 }
 
@@ -1860,6 +1895,44 @@ function removeAnnexPdf(i){
   saveInfo();toast('PDF link removed');render();
 }
 
+// Start/End dates shown in Schools Info are read straight from the calendar
+// (matched by school name + year), so they always tally with it.
+function infoScheduleEntries(info){
+  const key=normName(info&&info.name);
+  if(!key)return[];
+  const yr=infoYear(info);
+  return schools.filter(x=>x.year===yr&&x.name&&x.plannedStart&&x.plannedEnd&&normName(x.name)===key)
+    .sort((a,b)=>new Date(a.plannedStart)-new Date(b.plannedStart));
+}
+const dFull=d=>d?new Date(d).toLocaleDateString('en-SG',{day:'numeric',month:'short',year:'numeric'}):'';
+function infoDateCell(entries,field){
+  if(!entries.length)return`<span style="color:var(--text3)">—</span>`;
+  return entries.map(e=>`<div style="white-space:nowrap">${entries.length>1?`<span style="color:var(--text3);font-size:9px">${escapeHtml(teamLabel(e))} </span>`:''}${dFull(e[field])}</div>`).join('');
+}
+function exportInfoCSV(){
+  const yr=state.year;
+  const list=infoOfYear(yr).filter(x=>x.name);
+  if(!list.length){toast('No schools to export','#C84040');return;}
+  const hdr=['School Name','Address','Postal','Contact Person','Phone','Email','Team','Sub-team','Status','Start Date','End Date','Days',
+    ...[1,2,3,4,5,6].flatMap(p=>[`P${p} Cls`,`P${p} Enr`]),'Total Enr'];
+  const rows=[];
+  list.forEach(x=>{
+    const total=[1,2,3,4,5,6].reduce((a,p)=>a+(parseInt(x['p'+p+'e'])||0),0)||'';
+    const tail=[...[1,2,3,4,5,6].flatMap(p=>[x['p'+p+'c']||'',x['p'+p+'e']||'']),total];
+    const base=[x.name,x.address||'',x.postal||'',x.contact||'',x.phone||'',x.email||''];
+    const entries=infoScheduleEntries(x);
+    if(!entries.length){rows.push([...base,'','','','','','',...tail]);return;}
+    // A school scheduled more than once (e.g. HMG and SCP on different dates) gets one row per booking
+    entries.forEach(e=>rows.push([...base,e.team||'',getSub(e),e.status||'',ymd(e.plannedStart),ymd(e.plannedEnd),netDays(e.plannedStart,e.plannedEnd,yr)||'',...tail]));
+  });
+  const csv=[hdr,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\r\n');
+  const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download=`YPHS_${yr}_Schools_Info.csv`;
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  toast('Schools Info CSV downloaded ✓','#3D9E6A');
+}
 function renderSchoolsDirectory(){
   const ed=state.isEditor,yr=state.year;
   while(infoOfYear(yr).length<30)schoolsInfo.push({year:yr});
@@ -1870,6 +1943,8 @@ function renderSchoolsDirectory(){
     return`<tr data-info-i="${i}"${dupI?' class="dup-row"':''}>
       <td style="color:var(--text3);font-size:10px;font-family:'JetBrains Mono',monospace">${n+1}</td>
       <td style="white-space:nowrap">${fields('name','School name','180px',false)}<span class="info-dup-slot">${dupI?dupBadge(infoDupTitle(i)):''}</span></td>
+      <td style="font-family:'JetBrains Mono',monospace;font-size:11px">${infoDateCell(infoScheduleEntries(s),'plannedStart')}</td>
+      <td style="font-family:'JetBrains Mono',monospace;font-size:11px">${infoDateCell(infoScheduleEntries(s),'plannedEnd')}</td>
       <td>${fields('address','Address','180px',false)}</td>
       <td>${fields('postal','000000','68px')}</td>
       <td>${fields('contact','Contact','110px',false)}</td>
@@ -1882,10 +1957,11 @@ function renderSchoolsDirectory(){
   }).join('');
   return`<div style="margin-bottom:12px;display:flex;align-items:center;gap:10px">
     <span style="font-size:12px;color:var(--text2)">${infoOfYear(yr).filter(s=>s.name).length} schools in the ${yr} database</span>
-    ${ed?`<button class="btn btn-primary btn-sm" onclick="addInfoRow()" style="margin-left:auto">+ Add Row</button>`:''}
+    <button class="btn btn-ghost btn-sm" onclick="exportInfoCSV()" style="margin-left:auto" title="Download this year's Schools Info, with calendar start/end dates, as CSV">⬇ Download CSV</button>
+    ${ed?`<button class="btn btn-primary btn-sm" onclick="addInfoRow()">+ Add Row</button>`:''}
   </div>
   <div class="data-table" style="overflow-x:auto"><table>
-    <thead><tr><th>#</th><th>School Name</th><th>Address</th><th>Postal</th><th>Contact Person</th><th>Phone</th><th>Email</th>
+    <thead><tr><th>#</th><th>School Name</th><th title="From the calendar">Start Date</th><th title="From the calendar">End Date</th><th>Address</th><th>Postal</th><th>Contact Person</th><th>Phone</th><th>Email</th>
     ${[1,2,3,4,5,6].map(p=>`<th>P${p} Cls</th><th>P${p} Enr</th>`).join('')}<th>Total Enr</th><th>Actions</th></tr></thead>
     <tbody>${rows}</tbody>
   </table></div>`;
