@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>YPHS Health Screening Scheduler</title>
-<!-- BUILD MARKER: v2026-09-11-fixes34 — if you can't find this exact string with
+<!-- BUILD MARKER: v2026-09-11-fixes35 — if you can't find this exact string with
      Ctrl/Cmd+F while viewing the page source, you are opening a stale/old copy
      of this file, not the latest one. -->
 <style>
@@ -305,7 +305,7 @@ tr.dup-row>td:first-child{box-shadow:inset 3px 0 0 #C84040;}
       <button class="btn-icon" onclick="toggleTheme()" title="Toggle theme">🌙</button>
       <button class="btn-icon" onclick="exportPDF()" title="Export PDF" id="pdf-btn" style="display:none">🖨</button>
       <div class="lock-badge" id="lock-badge" onclick="showPinModal()">🔒 View only</div>
-      <div title="Build version — confirms you're on the latest file" style="font-size:9px;color:var(--text3);opacity:.5;padding:2px 6px;font-family:'JetBrains Mono',monospace">v2026-09-11-fixes34</div>
+      <div title="Build version — confirms you're on the latest file" style="font-size:9px;color:var(--text3);opacity:.5;padding:2px 6px;font-family:'JetBrains Mono',monospace">v2026-09-11-fixes35</div>
       <button class="btn btn-primary btn-sm" id="add-btn" onclick="showAddSchool()" style="display:none">+ Add School</button>
     </div>
   </div>
@@ -395,6 +395,8 @@ tr.dup-row>td:first-child{box-shadow:inset 3px 0 0 #C84040;}
     <div class="field"><label>Start Date</label><input id="f-pstart" type="date" onchange="calcDays()"></div>
     <div class="field"><label>End Date</label><input id="f-pend" type="date" onchange="calcDays()"></div>
     <div class="field"><label>Days (auto-calculated)</label><input id="f-days" type="number" readonly style="opacity:.6"></div>
+    <div class="field"><label>Liaison Date</label><input id="f-ldate" type="date"></div>
+    <div class="field"><label>Liaison Time</label><input id="f-ltime" type="time"></div>
     <div class="section-hdr">Contact Details</div>
     <div class="field"><label>Contact Person</label><input id="f-contact" type="text" placeholder="e.g. Mrs Tan"></div>
     <div class="field"><label>Phone / WhatsApp</label><input id="f-phone" type="tel" placeholder="e.g. 9123 4567"></div>
@@ -435,7 +437,7 @@ let SITE_PASSWORD = localStorage.getItem('yphs_site_pw') || 'YPHS2026';
 let EDITOR_PIN    = localStorage.getItem('yphs_editor_pin') || '2027';
 // Keep PIN alias for backward compatibility with existing checkPin() calls
 const SHEET_ID='11MDEThuNiyEiZaKh6Yqt-CdwXG5K0V1IfBI4T9Mhli8';
-const BUILD_VERSION='v2026-09-11-fixes34';
+const BUILD_VERSION='v2026-09-11-fixes35';
 // If a newer version of this page has been deployed, this tab is running old code
 // against possibly-newer data. Saving from it could overwrite other people's work
 // (or drop columns added by the update), so it is blocked until the page is refreshed.
@@ -829,12 +831,39 @@ async function gClear(range){
 }
 
 // Sheet columns: A=id B=year C=name D=team E=status F=start G=end
-//   H=(legacy actualStart, unused) I=(legacy actualEnd, unused) J=contact K=phone L=email M=notes N=sub (HMG/SCP/BOTH) O=daysRequired (school days needed, for pending schools) P=locked (1 = locked in place)
+//   H=(legacy actualStart, unused) I=(legacy actualEnd, unused) J=contact K=phone L=email M=notes N=sub (HMG/SCP/BOTH) O=daysRequired (school days needed, for pending schools) P=locked (1 = locked in place) Q=liaisonDate (YYYY-MM-DD) R=liaisonTime (HH:MM)
 // Planned vs. Screening dates were merged into a single Start/End Date pair.
+// Liaison date/time come back from Sheets as display text, so normalise them to YYYY-MM-DD / HH:MM
+function normLiaisonDate(v){
+  v=String(v==null?'':v).trim();
+  if(!v)return'';
+  if(/^\d{4}-\d{2}-\d{2}$/.test(v))return v;
+  const d=new Date(v);
+  return isNaN(d)?'':ymd(d);
+}
+function normLiaisonTime(v){
+  v=String(v==null?'':v).trim();
+  const m=v.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*([ap]m)?$/i);
+  if(!m)return'';
+  let h=parseInt(m[1]);const mi=m[2];
+  if(m[3]){const pm=m[3].toLowerCase()==='pm';if(pm&&h<12)h+=12;if(!pm&&h===12)h=0;}
+  return h>23?'':String(h).padStart(2,'0')+':'+mi;
+}
+function liaisonDateObj(v){const m=String(v||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);return m?new Date(+m[1],+m[2]-1,+m[3]):null;}
+function fmtTime(t){
+  const m=String(t||'').match(/^(\d{2}):(\d{2})$/);
+  if(!m)return'';
+  const h=+m[1];
+  return `${h%12||12}:${m[2]} ${h>=12?'pm':'am'}`;
+}
+function liaisonText(s){
+  const d=liaisonDateObj(s&&s.liaisonDate);
+  return [d?d.toLocaleDateString('en-SG',{weekday:'short',day:'numeric',month:'short',year:'numeric'}):'',fmtTime(s&&s.liaisonTime)].filter(Boolean).join(', ');
+}
 function schoolToRow(s){
   return[s.id||'',s.year||'',s.name||'',s.team||'',s.status||'',
          s.plannedStart||'',s.plannedEnd||'','','',
-         s.contact||'',s.phone||'',s.email||'',s.notes||'',getSub(s),s.daysRequired||'',s.locked?'1':''];
+         s.contact||'',s.phone||'',s.email||'',s.notes||'',getSub(s),s.daysRequired||'',s.locked?'1':'',s.liaisonDate||'',s.liaisonTime||''];
 }
 function rowToSchool(r){
   if(!r[0]&&!r[2])return null;
@@ -848,7 +877,8 @@ function rowToSchool(r){
          contact:r[9]||'',phone:r[10]||'',email:r[11]||'',notes:r[12]||'',
          sub:SUB_TEAMS.includes(r[13])?r[13]:'BOTH',
          daysRequired:parseInt(r[14])||null,
-         locked:r[15]==='1'||String(r[15]).toLowerCase()==='true'};
+         locked:r[15]==='1'||String(r[15]).toLowerCase()==='true',
+         liaisonDate:normLiaisonDate(r[16]),liaisonTime:normLiaisonTime(r[17])};
 }
 function infoToRow(s){
   return[s.name||'',s.address||'',s.postal||'',s.contact||'',s.phone||'',s.email||'',
@@ -870,7 +900,7 @@ async function loadFromSheets(){
   try{
     // Load all 3 tabs in parallel
     const [sRes,iRes,lRes,boRes,holRes]=await Promise.all([
-      gFetch(`/values/${TAB_SCHOOLS}!A2:P`),
+      gFetch(`/values/${TAB_SCHOOLS}!A2:R`),
       gFetch(`/values/${TAB_INFO}!A2:X`),
       gFetch(`/values/${TAB_LOG}!A2:B`),
       gFetch(`/values/Blockouts!A2:D`).catch(()=>({values:[]})),
@@ -934,7 +964,7 @@ async function saveAllToSheets(){
   try{
     const writes=[];
     if(toWrite.has('schools')){
-      const sRows=[['id','year','name','team','status','start','end','','','contact','phone','email','notes','sub','daysRequired','locked'],
+      const sRows=[['id','year','name','team','status','start','end','','','contact','phone','email','notes','sub','daysRequired','locked','liaisonDate','liaisonTime'],
         ...schools.map(schoolToRow)];
       writes.push(writeTab(TAB_SCHOOLS, sRows));
     }
@@ -1374,6 +1404,7 @@ function showTooltip(e,schoolId){
     <div style="font-size:11px;color:var(--text2)">👥 ${escapeHtml(teamLabel(s))}</div>
     <div style="font-size:11px;color:var(--text2)">📅 ${escapeHtml(dates)}</div>
     <div style="font-size:11px;color:var(--text2)">🏫 ${escapeHtml(days)}</div>
+    ${liaisonText(s)?`<div style="font-size:11px;color:var(--text2)">🤝 Liaison: ${escapeHtml(liaisonText(s))}</div>`:''}
     ${s.locked?'<div style="font-size:11px;color:#F0C060;margin-top:3px">🔒 Locked in place</div>':''}
     ${isSchedDup(s)?`<div style="font-size:11px;color:#FF8A8A;margin-top:4px">⚠ ${escapeHtml(schedDupTitle(s))}</div>`:''}
     ${s.notes?`<div style="margin-top:6px;border-top:1px solid var(--border);padding-top:6px"><div style="font-size:10px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--text3);margin-bottom:2px">Notes / Remarks</div><div style="font-size:15px;line-height:1.45;font-weight:500;color:var(--text);white-space:pre-wrap;word-break:break-word">💬 ${escapeHtml(s.notes)}</div></div>`:''}`;
@@ -1457,7 +1488,7 @@ function renderDetails(){
   const editable=state.isEditor;
   const thSort=(col,label)=>`<th onclick="sortBy('${col}')" title="Sort by ${label}">${label} ${state.sortCol===col?(state.sortDir===1?'↑':'↓'):''}</th>`;
   let rows='';
-  if(!data.length)rows=`<tr><td colspan="12" style="text-align:center;padding:36px;color:var(--text3)">No schools found. ${editable?'Add schools using "+ Add School".':''}</td></tr>`;
+  if(!data.length)rows=`<tr><td colspan="13" style="text-align:center;padding:36px;color:var(--text3)">No schools found. ${editable?'Add schools using "+ Add School".':''}</td></tr>`;
   else data.forEach((s,i)=>{
     const sc=getStatusColor(s.status),tc=getTeamColor(s.team);
     const ov=hasOverlap(s);
@@ -1468,6 +1499,7 @@ function renderDetails(){
       <td><div style="font-weight:600">${s.locked?'<span title="Locked in place">🔒</span> ':''}${escapeHtml(s.name)}${isSchedDup(s)?dupBadge(schedDupTitle(s)):''}</div>${tl}</td>
       <td><span class="team-chip" style="background:${tc}22;color:${tc}">${teamLabel(s)}</span></td>
       <td>${d2s(s.plannedStart)}</td><td>${d2s(s.plannedEnd)}</td>
+      <td style="font-size:11px;white-space:nowrap">${liaisonText(s)?`🤝 ${escapeHtml(liaisonText(s))}`:'<span style="color:var(--text3)">—</span>'}</td>
       <td style="font-family:'JetBrains Mono',monospace;text-align:center">${pd}</td>
       <td><span class="status-chip" style="background:${sc}22;color:${sc}">${s.status||'—'}</span></td>
       <td style="color:var(--text3);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(s.contact||'')}">${escapeHtml(s.contact||'')}</td>
@@ -1485,7 +1517,7 @@ function renderDetails(){
     <button class="btn btn-ghost btn-sm" onclick="exportCSV()">⬇ CSV</button>
   </div>
   <div class="data-table" style="overflow-x:auto"><table>
-    <thead><tr><th>#</th>${thSort('name','School')}${thSort('team','Team')}${thSort('plannedStart','Start Date')}${thSort('plannedEnd','End Date')}<th>Days</th>${thSort('status','Status')}<th>Contact</th><th>Phone</th><th>Notes</th><th>⚠</th><th></th></tr></thead>
+    <thead><tr><th>#</th>${thSort('name','School')}${thSort('team','Team')}${thSort('plannedStart','Start Date')}${thSort('plannedEnd','End Date')}${thSort('liaisonDate','Liaison')}<th>Days</th>${thSort('status','Status')}<th>Contact</th><th>Phone</th><th>Notes</th><th>⚠</th><th></th></tr></thead>
     <tbody>${rows}</tbody>
   </table></div>`;
 }
@@ -1580,18 +1612,96 @@ function renderDashboard(){
 // ── NOTIFICATIONS ──────────────────────────────────────────────────────────
 // Row number a Schools Info entry shows in the grid for its year
 function infoYearRowNumber(i){let n=0;for(let k=0;k<=i;k++)if(infoYear(schoolsInfo[k])===infoYear(schoolsInfo[i]))n++;return n;}
-// Reminder date = 2 calendar months before a school's start date (day clamped to month length)
-function twoMonthsBefore(d){
+// Reminder stages before a school's start date. Month stages are calendar months (day clamped to month length).
+function monthsBefore(d,n){
   const x=dateOnly(d),day=x.getDate();
-  x.setDate(1);x.setMonth(x.getMonth()-2);
+  x.setDate(1);x.setMonth(x.getMonth()-n);
   x.setDate(Math.min(day,new Date(x.getFullYear(),x.getMonth()+1,0).getDate()));
   return x;
 }
+function daysBefore(d,n){const x=dateOnly(d);x.setDate(x.getDate()-n);return x;}
+const REM_STAGES=[
+  {key:'2m',label:'2 months',short:'2 mo',color:'#4F8EF7',calc:d=>monthsBefore(d,2)},
+  {key:'1m',label:'1 month',short:'1 mo',color:'#8B7CF6',calc:d=>monthsBefore(d,1)},
+  {key:'2w',label:'2 weeks',short:'2 wk',color:'#E8A33D',calc:d=>daysBefore(d,14)},
+  {key:'1w',label:'1 week',short:'1 wk',color:'#E85050',calc:d=>daysBefore(d,7)}
+];
 function getReminders(yr){
   const today=new Date();today.setHours(0,0,0,0);
-  return schools.filter(s=>s.year===yr&&s.name&&s.plannedStart&&s.plannedEnd&&dateOnly(s.plannedStart)>=today)
-    .map(s=>({s,remind:twoMonthsBefore(s.plannedStart)}))
-    .sort((a,b)=>(a.remind-b.remind)||(new Date(a.s.plannedStart)-new Date(b.s.plannedStart)));
+  return schools.filter(x=>x.year===yr&&x.name&&x.plannedStart&&x.plannedEnd&&dateOnly(x.plannedStart)>=today)
+    .map(x=>{
+      const stages=REM_STAGES.map(st=>({...st,date:st.calc(x.plannedStart)}));
+      const reached=stages.filter(st=>st.date<=today);
+      const t=getTerm(new Date(x.plannedStart),yr);
+      return{s:x,stages,current:reached.length?reached[reached.length-1]:null,termIdx:t?TERMS[yr].indexOf(t):-1};
+    })
+    .sort((p,q)=>new Date(p.s.plannedStart)-new Date(q.s.plannedStart));
+}
+function setRemGroup(v){state.remGroup=v;render();}
+function setRemTeam(v){state.remTeam=v;render();}
+function setRemTerm(v){state.remTerm=v;render();}
+function remRowHtml(r,today){
+  const x=r.s,DAY=1000*60*60*24;
+  const toStart=Math.round((dateOnly(x.plannedStart)-today)/DAY);
+  const tc=getTeamColor(x.team);
+  const firstDue=Math.round((r.stages[0].date-today)/DAY);
+  const badge=r.current
+    ?`<span class="notif-days" style="background:${r.current.color};min-width:44px;text-align:center" title="Latest reminder reached: ${r.current.label} before start">${r.current.short}</span>`
+    :`<span class="notif-days" style="background:var(--surface2);color:var(--text2);min-width:44px;text-align:center" title="First reminder (2 months before) is in ${firstDue} days">in ${firstDue}d</span>`;
+  const chips=r.stages.map(st=>{
+    const passed=st.date<=today,isCur=r.current&&r.current.key===st.key;
+    const style=isCur?`background:${st.color};color:#fff;border:1px solid ${st.color}`
+      :passed?`background:${st.color}22;color:${st.color};border:1px solid ${st.color}55`
+      :`background:transparent;color:var(--text3);border:1px dashed var(--border2)`;
+    return`<span title="${st.label} before start" style="${style};padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600;white-space:nowrap">${passed&&!isCur?'✓ ':''}${st.short} · ${dFull(st.date)}</span>`;
+  }).join('');
+  const tl=r.termIdx>=0?`<span class="term-badge ${TERMS[x.year][r.termIdx].cls}">${TERMS[x.year][r.termIdx].name}</span>`:'';
+  return`<div class="notif-item" style="align-items:flex-start">
+    ${badge}
+    <div style="flex:1;min-width:0"><div style="font-weight:600">${escapeHtml(x.name)} ${tl}</div>
+    <div style="font-size:11px;color:var(--text2);margin:2px 0 5px">Starts ${dFull(x.plannedStart)} (${toStart===0?'today':'in '+toStart+'d'}) · <span style="color:${tc}">${escapeHtml(teamLabel(x))}</span></div>
+    <div style="display:flex;gap:5px;flex-wrap:wrap">${chips}</div></div>
+    <span class="status-chip" style="background:${getStatusColor(x.status)}22;color:${getStatusColor(x.status)}">${escapeHtml(x.status||'')}</span>
+    ${state.isEditor?`<button class="btn btn-ghost btn-sm" onclick="editSchool('${x.id}')">Edit</button>`:''}
+  </div>`;
+}
+function renderReminders(all){
+  const yr=state.year;
+  const today=new Date();today.setHours(0,0,0,0);
+  const group=state.remGroup||'none',fTeam=state.remTeam||'',fTerm=state.remTerm===undefined?'':state.remTerm;
+  let list=all;
+  if(fTeam)list=list.filter(r=>r.s.team===fTeam);
+  if(fTerm!=='')list=list.filter(r=>String(r.termIdx)===String(fTerm));
+  const dueN=list.filter(r=>r.current).length;
+  const opt=(v,l,cur)=>`<option value="${v}" ${String(cur)===String(v)?'selected':''}>${l}</option>`;
+  const bar=`<div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <span style="font-size:11px;color:var(--text3)">View</span>
+    <select class="filter-select" onchange="setRemGroup(this.value)">${opt('none','All — by start date',group)}${opt('team','Grouped by team',group)}${opt('term','Grouped by term',group)}</select>
+    <select class="filter-select" onchange="setRemTeam(this.value)">${opt('','All teams',fTeam)}${TEAMS.map(t=>opt(t.code,t.code,fTeam)).join('')}</select>
+    <select class="filter-select" onchange="setRemTerm(this.value)">${opt('','All terms',fTerm)}${TERMS[yr].map((t,i)=>opt(i,t.name,fTerm)).join('')}${opt('-1','Holiday / outside term',fTerm)}</select>
+    <span style="margin-left:auto;font-size:10px;color:var(--text3)">Badge = latest reminder reached · chips show all 4 dates</span>
+  </div>`;
+  let body='';
+  const groupHdr=(label,color,items)=>`<div style="padding:6px 16px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:${color||'var(--text2)'};display:flex;gap:8px"><span>${label}</span><span style="color:var(--text3);font-weight:500">${items.length} school${items.length===1?'':'s'}${items.filter(r=>r.current).length?` · ${items.filter(r=>r.current).length} reminder${items.filter(r=>r.current).length===1?'':'s'} reached`:''}</span></div>`;
+  if(!list.length){
+    body=`<div style="padding:24px;text-align:center;color:var(--text3);font-size:12px">No upcoming schools match these filters.</div>`;
+  }else if(group==='team'){
+    const keys=[...TEAMS.map(t=>t.code),''];
+    keys.forEach(k=>{
+      const items=list.filter(r=>(r.s.team||'')===k);
+      if(!items.length)return;
+      body+=groupHdr(k?escapeHtml(k):'No team assigned',k?getTeamColor(k):'',items)+items.map(r=>remRowHtml(r,today)).join('');
+    });
+  }else if(group==='term'){
+    [...TERMS[yr].map((t,i)=>i),-1].forEach(k=>{
+      const items=list.filter(r=>r.termIdx===k);
+      if(!items.length)return;
+      body+=groupHdr(k>=0?`${TERMS[yr][k].name} · ${d2s(TERMS[yr][k].s)} – ${d2s(TERMS[yr][k].e)}`:'Holiday / outside term','',items)+items.map(r=>remRowHtml(r,today)).join('');
+    });
+  }else{
+    body=list.map(r=>remRowHtml(r,today)).join('');
+  }
+  return`<div class="notif-panel"><div class="notif-header" style="background:rgba(79,142,247,.1);color:var(--accent)">🔔 Reminders — 2 months · 1 month · 2 weeks · 1 week before start (${list.length}${list.length!==all.length?' of '+all.length:''} schools${dueN?` · ${dueN} with a reminder reached`:''})</div>${bar}${body}</div>`;
 }
 function renderNotifications(){
   const alerts=getPendingAlerts();
@@ -1614,25 +1724,7 @@ function renderNotifications(){
     });
     html+='</div>';
   }
-  if(reminders.length){
-    const DAY=1000*60*60*24;
-    const dueN=reminders.filter(r=>r.remind<=today).length;
-    html+=`<div class="notif-panel"><div class="notif-header" style="background:rgba(79,142,247,.1);color:var(--accent)">🔔 2-month reminders — ${state.year} schools on the calendar (${reminders.length})${dueN?` · ${dueN} due now`:''}</div>`;
-    reminders.forEach(({s,remind})=>{
-      const due=remind<=today;
-      const toStart=Math.round((dateOnly(s.plannedStart)-today)/DAY);
-      const toRemind=Math.round((remind-today)/DAY);
-      const tc=getTeamColor(s.team);
-      html+=`<div class="notif-item">
-        <span class="notif-days" style="background:${due?'#C87020':'#4F8EF7'}">${due?'DUE':'in '+toRemind+'d'}</span>
-        <div style="flex:1"><div style="font-weight:600">${escapeHtml(s.name)}</div>
-        <div style="font-size:11px;color:var(--text2)">Remind on ${dFull(remind)} · starts ${dFull(s.plannedStart)} (${toStart===0?'today':'in '+toStart+'d'}) · <span style="color:${tc}">${escapeHtml(teamLabel(s))}</span></div></div>
-        <span class="status-chip" style="background:${getStatusColor(s.status)}22;color:${getStatusColor(s.status)}">${escapeHtml(s.status||'')}</span>
-        ${state.isEditor?`<button class="btn btn-ghost btn-sm" onclick="editSchool('${s.id}')">Edit</button>`:''}
-      </div>`;
-    });
-    html+='</div>';
-  }
+  if(reminders.length)html+=renderReminders(reminders);
   if(overlaps.length){
     html+=`<div class="notif-panel"><div class="notif-header">⚠ Scheduling Conflicts (${overlaps.length} schools)</div>`;
     overlaps.forEach(s=>{
@@ -2432,7 +2524,7 @@ function showAddSchool(team='',dateStr=''){
   state.editingId=null;
   document.getElementById('smod-title').textContent='Add School';
   document.getElementById('delete-school-btn').style.display='none';
-  ['f-name','f-contact','f-phone','f-email','f-notes'].forEach(id=>document.getElementById(id).value='');
+  ['f-name','f-contact','f-phone','f-email','f-notes','f-ldate','f-ltime'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('f-team').value=team?team+'|BOTH':'';
   document.getElementById('f-status').value='Pending Confirmation';
   document.getElementById('f-pstart').value=dateStr;
@@ -2460,6 +2552,8 @@ function editSchool(id){
   document.getElementById('f-phone').value=s.phone||'';
   document.getElementById('f-email').value=s.email||'';
   document.getElementById('f-notes').value=s.notes||'';
+  document.getElementById('f-ldate').value=s.liaisonDate||'';
+  document.getElementById('f-ltime').value=s.liaisonTime||'';
   populateSchoolNameSuggestions();
   updateSchoolDupWarning();
   applyLockToModal(s);
@@ -2487,6 +2581,8 @@ function saveSchool(){
     phone:document.getElementById('f-phone').value,
     email:document.getElementById('f-email').value,
     notes:document.getElementById('f-notes').value,
+    liaisonDate:document.getElementById('f-ldate').value||'',
+    liaisonTime:document.getElementById('f-ltime').value||'',
   };
   if(state.editingId){
     const old=schools.find(s=>s.id===state.editingId);
@@ -2514,10 +2610,11 @@ function closeSchoolModal(){document.getElementById('school-modal').style.displa
 function exportCSV(){
   const yr=state.year;
   const data=schools.filter(s=>s.year===yr&&s.name);
-  const hdr=['School Name','Team','Sub-team','Organisation','Status','Start Date','End Date','Days','Contact','Phone','Email','Notes'];
+  const hdr=['School Name','Team','Sub-team','Organisation','Status','Start Date','End Date','Liaison Date','Liaison Time','Days','Contact','Phone','Email','Notes'];
   const rows=data.map(s=>[
     s.name,s.team,getSub(s),s.team?TEAMS.find(t=>t.code===s.team)?.org:'',s.status,
     s.plannedStart?d2s(s.plannedStart):'',s.plannedEnd?d2s(s.plannedEnd):'',
+    s.liaisonDate||'',s.liaisonTime||'',
     netDays(s.plannedStart,s.plannedEnd,yr)||'',
     s.contact||'',s.phone||'',s.email||'',s.notes||''
   ].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(','));
