@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>YPHS Health Screening Scheduler</title>
-<!-- BUILD MARKER: v2026-09-11-fixes35 — if you can't find this exact string with
+<!-- BUILD MARKER: v2026-09-11-fixes39 — if you can't find this exact string with
      Ctrl/Cmd+F while viewing the page source, you are opening a stale/old copy
      of this file, not the latest one. -->
 <style>
@@ -303,9 +303,9 @@ tr.dup-row>td:first-child{box-shadow:inset 3px 0 0 #C84040;}
       <div id="sync-status" style="font-size:12px;color:var(--text3);display:flex;align-items:center;gap:4px">☁️ Synced</div>
       <button class="btn-icon" onclick="manualRefresh()" title="Refresh from Google Sheets" style="font-size:13px">🔄</button>
       <button class="btn-icon" onclick="toggleTheme()" title="Toggle theme">🌙</button>
-      <button class="btn-icon" onclick="exportPDF()" title="Export PDF" id="pdf-btn" style="display:none">🖨</button>
+      <button class="btn-icon" onclick="openPdfModal()" title="Export calendar as PDF (by team)" id="pdf-btn" style="display:none">🖨</button>
       <div class="lock-badge" id="lock-badge" onclick="showPinModal()">🔒 View only</div>
-      <div title="Build version — confirms you're on the latest file" style="font-size:9px;color:var(--text3);opacity:.5;padding:2px 6px;font-family:'JetBrains Mono',monospace">v2026-09-11-fixes35</div>
+      <div title="Build version — confirms you're on the latest file" style="font-size:9px;color:var(--text3);opacity:.5;padding:2px 6px;font-family:'JetBrains Mono',monospace">v2026-09-11-fixes39</div>
       <button class="btn btn-primary btn-sm" id="add-btn" onclick="showAddSchool()" style="display:none">+ Add School</button>
     </div>
   </div>
@@ -324,7 +324,10 @@ tr.dup-row>td:first-child{box-shadow:inset 3px 0 0 #C84040;}
     <div style="font-size:36px;margin-bottom:12px">🏥</div>
     <div style="font-size:11px;font-weight:600;letter-spacing:.12em;color:var(--accent);text-transform:uppercase;margin-bottom:4px">YPHS · Singapore</div>
     <div style="font-size:20px;font-weight:700;color:var(--text);margin-bottom:4px">Health Screening Scheduler</div>
-    <div style="font-size:12px;color:var(--text3);margin-bottom:28px">This tool is for authorised YPHS staff only.<br>Please enter the site password to continue.</div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:28px">This tool is for authorised YPHS staff only.<br>Please enter your name and the site password to continue.</div>
+    <input id="site-name-input" type="text" placeholder="Your name" maxlength="60" autocomplete="name"
+      style="width:100%;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:12px 14px;color:var(--text);font-size:15px;font-family:'Inter',sans-serif;outline:none;text-align:center;margin-bottom:10px;"
+      onkeydown="if(event.key==='Enter')document.getElementById('site-pw-input').focus()">
     <input id="site-pw-input" type="password" placeholder="Site password"
       style="width:100%;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:12px 14px;color:var(--text);font-size:15px;font-family:'Inter',sans-serif;outline:none;text-align:center;letter-spacing:.1em;margin-bottom:10px;"
       onkeydown="if(event.key==='Enter')checkSitePassword()">
@@ -336,6 +339,18 @@ tr.dup-row>td:first-child{box-shadow:inset 3px 0 0 #C84040;}
     <div style="margin-top:16px;font-size:11px;color:var(--text3)">Contact your coordinator if you need access.</div>
   </div>
 </div>
+
+<!-- PDF EXPORT MODAL (open to view-only users too) -->
+<div class="modal-bg" id="pdf-modal" style="display:none" onclick="if(event.target===this)closePdfModal()">
+<div class="modal">
+  <h3>🖨 Export calendar as PDF</h3>
+  <p>Choose the teams to include. The PDF follows the calendar view you are on (week, month or term).</p>
+  <div id="pdf-team-list" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0"></div>
+  <div style="display:flex;gap:8px;margin-bottom:12px"><button class="btn btn-ghost btn-sm" onclick="pdfSelectTeams(true)">Select all</button><button class="btn btn-ghost btn-sm" onclick="pdfSelectTeams(false)">Clear</button></div>
+  <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);cursor:pointer"><input type="checkbox" id="pdf-per-team"> Put each team on its own page</label>
+  <div id="pdf-modal-err" style="color:#E85050;font-size:12px;min-height:18px;margin-top:6px"></div>
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px"><button class="btn btn-ghost btn-sm" onclick="closePdfModal()">Cancel</button><button class="btn btn-primary btn-sm" onclick="runPdfExport()">Export PDF</button></div>
+</div></div>
 
 <!-- PIN MODAL -->
 <div class="modal-bg" id="pin-modal" style="display:none">
@@ -437,7 +452,7 @@ let SITE_PASSWORD = localStorage.getItem('yphs_site_pw') || 'YPHS2026';
 let EDITOR_PIN    = localStorage.getItem('yphs_editor_pin') || '2027';
 // Keep PIN alias for backward compatibility with existing checkPin() calls
 const SHEET_ID='11MDEThuNiyEiZaKh6Yqt-CdwXG5K0V1IfBI4T9Mhli8';
-const BUILD_VERSION='v2026-09-11-fixes35';
+const BUILD_VERSION='v2026-09-11-fixes39';
 // If a newer version of this page has been deployed, this tab is running old code
 // against possibly-newer data. Saving from it could overwrite other people's work
 // (or drop columns added by the update), so it is blocked until the page is refreshed.
@@ -506,6 +521,7 @@ const GAPI_BASE=`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}`;
 const TAB_SCHOOLS='Schools';
 const TAB_INFO='SchoolsInfo';
 const TAB_LOG='Log';
+const TAB_ACCESS='AccessLog'; // optional tab: timestamp | name — one row per sign-in
 const TEAMS=[
   {code:'T1P',org:'NUHS',color:'#E8736A'},
   {code:'T2P',org:'NUHS',color:'#5CB85C'},
@@ -1034,6 +1050,74 @@ function saveLog(){
 function scheduleSave(){
   if(syncTimer)clearTimeout(syncTimer);
   syncTimer=setTimeout(()=>{syncTimer=null;saveAllToSheets();},800);
+}
+// ── SITE ACCESS LOG (who signed in) ────────────────────────────────────────
+let accessLog=[],accessLoadedAt=0,accessLoading=false,accessErr=false,firstLoadPromise=null;
+function cleanName(v){return String(v||'').replace(/\s+/g,' ').trim().slice(0,60);}
+async function recordAccess(name){
+  const ts=new Date().toISOString();
+  try{
+    // Read-then-rewrite the AccessLog tab (newest first, capped at 1000). Throws if the tab doesn't exist.
+    const r=await gFetch(`/values/${TAB_ACCESS}!A2:B`);
+    const rows=(r.values||[]).filter(x=>x[0]).map(x=>[x[0],x[1]||'']);
+    const all=[[ts,name],...rows].slice(0,1000);
+    await writeTab(TAB_ACCESS,[['timestamp','name'],...all]);
+    accessLog=all.map(x=>({ts:x[0],name:x[1]}));accessLoadedAt=Date.now();accessErr=false;
+  }catch(e){
+    // No AccessLog tab (or it can't be written): keep the record in the normal activity log instead.
+    // Wait for the first sheet load so it can't be overwritten by it.
+    try{await firstLoadPromise;}catch(_){}
+    addLog(`🔑 ${escapeHtml(name)} signed in`);
+  }
+}
+async function loadAccessLog(){
+  if(accessLoading)return;
+  accessLoading=true;
+  try{
+    const r=await gFetch(`/values/${TAB_ACCESS}!A2:B`);
+    accessLog=(r.values||[]).filter(x=>x[0]).map(x=>({ts:x[0],name:x[1]||''}));
+    accessErr=false;
+  }catch(e){accessErr=true;accessLog=[];}
+  accessLoadedAt=Date.now();accessLoading=false;
+  if(state.view==='log')render();
+}
+function fmtAccessTime(ts){
+  const d=new Date(ts);
+  return isNaN(d)?String(ts):d.toLocaleDateString('en-SG',{day:'numeric',month:'short',year:'numeric'})+' '+d.toLocaleTimeString('en-SG',{hour:'2-digit',minute:'2-digit'});
+}
+function exportAccessCSV(){
+  if(!accessLog.length){toast('No sign-ins to export','#C84040');return;}
+  const rows=[['Date','Time','Name'],...accessLog.map(a=>{const d=new Date(a.ts);
+    return isNaN(d)?[a.ts,'',a.name]:[ymd(d),d.toLocaleTimeString('en-GB'),a.name];})];
+  const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\r\n');
+  const url=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}));
+  const a=document.createElement('a');a.href=url;a.download='YPHS_site_access.csv';
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function renderAccessPanel(){
+  const box=(inner)=>`<div class="data-table" style="margin-bottom:16px">${inner}</div>`;
+  if(!state.isEditor)return box(`<div style="padding:14px 16px;font-size:12px;color:var(--text3)">🔒 Unlock editor mode to see who has signed in to the site.</div>`);
+  if(!accessLoadedAt||Date.now()-accessLoadedAt>60000)loadAccessLog();
+  const hdr=(extra)=>`<div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px"><span style="font-weight:600;font-size:13px">👥 Site access — who signed in</span>${extra||''}</div>`;
+  if(!accessLoadedAt)return box(hdr()+`<div style="padding:14px 16px;font-size:12px;color:var(--text3)">Loading…</div>`);
+  if(accessErr)return box(hdr()+`<div style="padding:14px 16px;font-size:12px;color:var(--text2);line-height:1.6">Sign-ins are being recorded in the activity log below. To keep a separate, longer history here, add a tab named <b>${TAB_ACCESS}</b> to your Google Sheet (it can be empty); every sign-in after that is stored in it.</div>`);
+  if(!accessLog.length)return box(hdr()+`<div style="padding:14px 16px;font-size:12px;color:var(--text3)">No sign-ins recorded yet.</div>`);
+  const people=new Map();
+  accessLog.forEach(a=>{
+    const k=a.name.toLowerCase();
+    const p=people.get(k)||{name:a.name,n:0,last:a.ts};
+    p.n++;if(new Date(a.ts)>new Date(p.last)){p.last=a.ts;p.name=a.name;}
+    people.set(k,p);
+  });
+  const list=[...people.values()].sort((x,y)=>new Date(y.last)-new Date(x.last));
+  const item=(t,txt)=>`<div class="log-item"><div class="log-time">${escapeHtml(t)}</div><div class="log-text">${txt}</div></div>`;
+  return box(
+    hdr(`<span style="font-size:11px;color:var(--text3)">${accessLog.length} sign-ins · ${list.length} ${list.length===1?'person':'people'}</span><button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="exportAccessCSV()">⬇ Download CSV</button>`)+
+    `<div style="padding:8px 16px 2px;font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text3)">By person (last sign-in)</div>`+
+    list.map(p=>item(fmtAccessTime(p.last),`<b>${escapeHtml(p.name)}</b> · ${p.n} sign-in${p.n===1?'':'s'}`)).join('')+
+    `<div style="padding:10px 16px 2px;font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text3)">Recent sign-ins</div>`+
+    accessLog.slice(0,30).map(a=>item(fmtAccessTime(a.ts),escapeHtml(a.name))).join(''));
 }
 function addLog(msg){
   activityLog.unshift({ts:new Date().toISOString(),msg});
@@ -1640,6 +1724,7 @@ function getReminders(yr){
 function setRemGroup(v){state.remGroup=v;render();}
 function setRemTeam(v){state.remTeam=v;render();}
 function setRemTerm(v){state.remTerm=v;render();}
+function setRemStage(v){state.remStage=v;render();}
 function remRowHtml(r,today){
   const x=r.s,DAY=1000*60*60*24;
   const toStart=Math.round((dateOnly(x.plannedStart)-today)/DAY);
@@ -1669,9 +1754,14 @@ function renderReminders(all){
   const yr=state.year;
   const today=new Date();today.setHours(0,0,0,0);
   const group=state.remGroup||'none',fTeam=state.remTeam||'',fTerm=state.remTerm===undefined?'':state.remTerm;
+  const fStage=state.remStage||'';
   let list=all;
   if(fTeam)list=list.filter(r=>r.s.team===fTeam);
   if(fTerm!=='')list=list.filter(r=>String(r.termIdx)===String(fTerm));
+  // Stage filter = schools whose latest reached reminder is that stage (counts respect the team/term filters)
+  const stageCount=k=>k===''?list.length:list.filter(r=>r.current&&r.current.key===k).length;
+  const stagePills=[{key:'',label:'All',color:'var(--text2)'},...REM_STAGES].map(st=>`<button class="btn btn-sm ${fStage===st.key?'btn-primary':'btn-ghost'}" onclick="setRemStage('${st.key}')" title="${st.key?'Schools now in the '+st.label+' reminder window':'Every upcoming school'}">${st.key?`<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${st.color};margin-right:5px"></span>`:''}${st.label} <span style="opacity:.7">${stageCount(st.key)}</span></button>`).join('');
+  if(fStage)list=list.filter(r=>r.current&&r.current.key===fStage);
   const dueN=list.filter(r=>r.current).length;
   const opt=(v,l,cur)=>`<option value="${v}" ${String(cur)===String(v)?'selected':''}>${l}</option>`;
   const bar=`<div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;align-items:center">
@@ -1680,11 +1770,12 @@ function renderReminders(all){
     <select class="filter-select" onchange="setRemTeam(this.value)">${opt('','All teams',fTeam)}${TEAMS.map(t=>opt(t.code,t.code,fTeam)).join('')}</select>
     <select class="filter-select" onchange="setRemTerm(this.value)">${opt('','All terms',fTerm)}${TERMS[yr].map((t,i)=>opt(i,t.name,fTerm)).join('')}${opt('-1','Holiday / outside term',fTerm)}</select>
     <span style="margin-left:auto;font-size:10px;color:var(--text3)">Badge = latest reminder reached · chips show all 4 dates</span>
+    <div style="flex-basis:100%;display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span style="font-size:11px;color:var(--text3)">Reminder</span>${stagePills}</div>
   </div>`;
   let body='';
   const groupHdr=(label,color,items)=>`<div style="padding:6px 16px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:${color||'var(--text2)'};display:flex;gap:8px"><span>${label}</span><span style="color:var(--text3);font-weight:500">${items.length} school${items.length===1?'':'s'}${items.filter(r=>r.current).length?` · ${items.filter(r=>r.current).length} reminder${items.filter(r=>r.current).length===1?'':'s'} reached`:''}</span></div>`;
   if(!list.length){
-    body=`<div style="padding:24px;text-align:center;color:var(--text3);font-size:12px">No upcoming schools match these filters.</div>`;
+    body=`<div style="padding:24px;text-align:center;color:var(--text3);font-size:12px">No upcoming schools match these filters.${fStage?' Schools appear under a reminder once its date has been reached.':''}</div>`;
   }else if(group==='team'){
     const keys=[...TEAMS.map(t=>t.code),''];
     keys.forEach(k=>{
@@ -2322,13 +2413,13 @@ function renderSettings(){
           <!-- Site Password -->
           <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:16px">
             <div style="font-weight:600;font-size:13px;margin-bottom:4px">🌐 Site Password</div>
-            <div style="font-size:11px;color:var(--text3);margin-bottom:14px">Required to open the app. Share with your whole team.</div>
+            <div style="font-size:11px;color:var(--text3);margin-bottom:14px">Required to open the app. Saved on this browser only — other computers/phones keep their own until changed there too.</div>
             ${ed?`
             <div style="display:flex;flex-direction:column;gap:8px">
               <div>
                 <div style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Current password</div>
                 <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:var(--accent);background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 12px;letter-spacing:.1em" id="show-site-pw">••••••••</div>
-                <button onclick="toggleShowPw('show-site-pw','${SITE_PASSWORD}')" style="background:none;border:none;color:var(--text3);font-size:11px;cursor:pointer;padding:4px 0;font-family:'Inter',sans-serif">👁 Show / Hide</button>
+                <button onclick="toggleShowPw('show-site-pw','site')" style="background:none;border:none;color:var(--text3);font-size:11px;cursor:pointer;padding:4px 0;font-family:'Inter',sans-serif">👁 Show / Hide</button>
               </div>
               <div>
                 <div style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">New password</div>
@@ -2347,13 +2438,13 @@ function renderSettings(){
           <!-- Editor PIN -->
           <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:16px">
             <div style="font-weight:600;font-size:13px;margin-bottom:4px">✏️ Editor PIN</div>
-            <div style="font-size:11px;color:var(--text3);margin-bottom:14px">Required to add/edit schools. Share only with coordinators.</div>
+            <div style="font-size:11px;color:var(--text3);margin-bottom:14px">Required to add/edit schools. Saved on this browser only — other computers/phones keep their own until changed there too.</div>
             ${ed?`
             <div style="display:flex;flex-direction:column;gap:8px">
               <div>
                 <div style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Current PIN</div>
                 <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:var(--accent);background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px 12px;letter-spacing:.2em" id="show-editor-pin">••••••</div>
-                <button onclick="toggleShowPw('show-editor-pin','${EDITOR_PIN}')" style="background:none;border:none;color:var(--text3);font-size:11px;cursor:pointer;padding:4px 0;font-family:'Inter',sans-serif">👁 Show / Hide</button>
+                <button onclick="toggleShowPw('show-editor-pin','pin')" style="background:none;border:none;color:var(--text3);font-size:11px;cursor:pointer;padding:4px 0;font-family:'Inter',sans-serif">👁 Show / Hide</button>
               </div>
               <div>
                 <div style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">New PIN</div>
@@ -2494,7 +2585,8 @@ function deleteBlockout(idx){
 }
 
 // ── ACTIVITY LOG ───────────────────────────────────────────────────────────
-function renderLog(){
+function renderLog(){return renderAccessPanel()+renderActivityLog();}
+function renderActivityLog(){
   const cutoff=new Date();cutoff.setDate(cutoff.getDate()-30);
   const recent=activityLog.filter(l=>new Date(l.ts)>=cutoff);
   if(!recent.length)return`<div class="empty"><div class="empty-icon">📝</div><div class="empty-text">No activity in the last 30 days.</div></div>`;
@@ -2623,9 +2715,27 @@ function exportCSV(){
   a.download=`YPHS_${yr}_Schools.csv`;a.click();
   toast('CSV downloaded ✓','#3D9E6A');
 }
-function exportPDF(){
+function openPdfModal(){
+  document.getElementById('pdf-team-list').innerHTML=TEAMS.map(t=>`<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" class="pdf-team-cb" value="${t.code}" checked><span style="width:10px;height:10px;border-radius:50%;background:${t.color};flex:none"></span>${t.code} <span style="color:var(--text3);font-size:11px">${t.org}</span></label>`).join('');
+  document.getElementById('pdf-per-team').checked=false;
+  document.getElementById('pdf-modal-err').textContent='';
+  document.getElementById('pdf-modal').style.display='flex';
+}
+function closePdfModal(){document.getElementById('pdf-modal').style.display='none';}
+function pdfSelectTeams(on){document.querySelectorAll('.pdf-team-cb').forEach(c=>c.checked=on);}
+function runPdfExport(){
+  const codes=[...document.querySelectorAll('.pdf-team-cb:checked')].map(c=>c.value);
+  if(!codes.length){document.getElementById('pdf-modal-err').textContent='Select at least one team.';return;}
+  const per=document.getElementById('pdf-per-team').checked;
+  closePdfModal();
+  exportPDF(codes,per);
+}
+function exportPDF(teamCodes,perTeam){
   const yr=state.year,m=state.month;
+  const sel=TEAMS.filter(t=>!teamCodes||teamCodes.includes(t.code));
+  if(!sel.length)return;
   const win=window.open('','_blank');
+  if(!win){toast('Allow pop-ups for this site to export the PDF','#C87020');return;}
   let days,title;
   if(state.calView==='week'){days=getWeekDays();title=`Week of ${d2s(days[0])} – ${d2s(days[days.length-1])}`;}
   else if(state.calView==='term'){const ti=state.termIdx||0;days=getTermDays(ti,yr);title=(TERMS[yr][ti]?.name||'Term')+' '+yr;}
@@ -2639,11 +2749,11 @@ function exportPDF(){
   const DAYS_PER_PAGE=state.calView==='term'?12:days.length;
   const chunks=[];
   for(let i=0;i<days.length;i+=DAYS_PER_PAGE)chunks.push(days.slice(i,i+DAYS_PER_PAGE));
-  const pageHtml=(chunk,pageNum,totalPages)=>{
+  const pageHtml=(chunk,pageNum,totalPages,teamList)=>{
     let tbl=`<table border="1" cellpadding="4" style="border-collapse:collapse;font-size:10px;width:100%"><tr><th style="width:${LABEL_W}px;background:#1E3A5F;color:#fff">Team</th>`;
     chunk.forEach(d=>{const ph=isPH(d,yr),hol=isHoliday(d,yr);tbl+=`<th style="width:${COL_W}px;background:${hol||ph?'#ddd':'#D6E4F0'};text-align:center;font-size:9px">${['Su','Mo','Tu','We','Th','Fr','Sa'][d.getDay()]}<br><b>${d.getDate()}</b>${ph?' PH':''}</th>`;});
     tbl+='</tr>';
-    TEAMS.forEach(team=>{
+    teamList.forEach(team=>{
       tbl+=`<tr><td style="font-weight:700;font-size:9px;background:${getTeamColor(team.code)}33">${team.code}</td>`;
       chunk.forEach(day=>{
         const hol=isHoliday(day,yr),ph=isPH(day,yr);
@@ -2657,10 +2767,12 @@ function exportPDF(){
     });
     tbl+='</table>';
     const pageLabel=totalPages>1?` — ${d2s(chunk[0])} to ${d2s(chunk[chunk.length-1])} (page ${pageNum} of ${totalPages})`:'';
-    return `<div class="print-page"><h2>YPHS Health Screening — ${title}${pageLabel}</h2>${tbl}</div>`;
+    const tl=teamList.length===TEAMS.length?'':teamList.map(t=>t.code).join(', ')+' — ';
+    return `<div class="print-page"><h2>YPHS Health Screening — ${tl}${title}${pageLabel}</h2>${tbl}</div>`;
   };
-  const body=chunks.map((c,i)=>pageHtml(c,i+1,chunks.length)).join('');
-  win.document.write(`<html><head><title>YPHS ${title}</title><style>
+  const groups=perTeam?sel.map(t=>[t]):[sel];
+  const body=groups.map(g=>chunks.map((c,i)=>pageHtml(c,i+1,chunks.length,g)).join('')).join('');
+  win.document.write(`<html><head><title>YPHS ${sel.length===TEAMS.length?'':sel.map(t=>t.code).join('-')+' '}${title}</title><style>
     @page{size:landscape;margin:10mm}
     body{font-family:Arial,sans-serif;padding:10px;}
     h2{font-size:14px;margin-bottom:8px;}
@@ -3045,9 +3157,10 @@ document.addEventListener('dragover',e=>{
 // ── INIT ───────────────────────────────────────────────────────────────────
 
 // ── PASSWORD MANAGEMENT ────────────────────────────────────────────────────
-function toggleShowPw(elId, actual){
+function toggleShowPw(elId, which){
   const el=document.getElementById(elId);
   if(!el)return;
+  const actual=which==='pin'?EDITOR_PIN:SITE_PASSWORD;
   if(el.textContent.includes('•')){
     el.textContent=actual;
     el.style.color='var(--text)';
@@ -3097,16 +3210,28 @@ function changeEditorPin(){
 
 // ── SITE PASSWORD ──────────────────────────────────────────────────────────
 function checkSitePassword(){
+  const err=document.getElementById('site-pw-error');
+  const nameEl=document.getElementById('site-name-input');
+  const name=cleanName(nameEl.value);
   const val=document.getElementById('site-pw-input').value.trim();
+  if(name.length<2){
+    err.textContent='Please enter your name.';
+    nameEl.focus();
+    return;
+  }
   if(val===SITE_PASSWORD){
     // Store in sessionStorage so refresh doesn't kick them out
     sessionStorage.setItem('yphs_auth','1');
+    sessionStorage.setItem('yphs_user',name);
+    localStorage.setItem('yphs_user_name',name);
+    state.userName=name;
     document.getElementById('site-gate').style.display='none';
     document.getElementById('app').style.display='flex';
     document.getElementById('site-pw-input').value='';
     bootApp();
+    recordAccess(name);
   } else {
-    document.getElementById('site-pw-error').textContent='Incorrect password. Please try again.';
+    err.textContent='Incorrect password. Please try again.';
     document.getElementById('site-pw-input').value='';
     document.getElementById('site-pw-input').focus();
     // Shake animation
@@ -3119,7 +3244,7 @@ function checkSitePassword(){
 function bootApp(){
   document.getElementById('pin-input').addEventListener('keydown',e=>{if(e.key==='Enter')checkPin();});
   document.getElementById('search-box').style.display='none';
-  document.getElementById('pdf-btn').style.display='none';
+  document.getElementById('pdf-btn').style.display=state.view==='calendar'?'':'none';
   state.month=new Date().getMonth();
 
 // ── STARTUP: load from localStorage cache first (instant), then sync from Sheets ──
@@ -3131,7 +3256,7 @@ render(); // show cached data immediately
 
 // Then fetch fresh data from Google Sheets in background
 setSyncStatus('syncing');
-loadFromSheets();
+firstLoadPromise=loadFromSheets();
 
 // Auto-refresh every 60 seconds so team changes appear without manual refresh.
 // Skipped whenever the school modal is open OR there's an unsaved local edit
@@ -3148,13 +3273,16 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkForNe
 
 // ── CHECK SESSION ON LOAD ──────────────────────────────────────────────────
 // If already authenticated this session, skip the password gate
-if(sessionStorage.getItem('yphs_auth')==='1'){
+// (a session from before names were required has no name, so it sees the gate once more)
+if(sessionStorage.getItem('yphs_auth')==='1'&&sessionStorage.getItem('yphs_user')){
+  state.userName=sessionStorage.getItem('yphs_user');
   document.getElementById('site-gate').style.display='none';
   document.getElementById('app').style.display='flex';
   bootApp();
 } else {
-  // Focus password input
-  setTimeout(()=>document.getElementById('site-pw-input').focus(),100);
+  const saved=localStorage.getItem('yphs_user_name')||'';
+  document.getElementById('site-name-input').value=saved;
+  setTimeout(()=>document.getElementById(saved?'site-pw-input':'site-name-input').focus(),100);
 }
 </script>
 </body>
